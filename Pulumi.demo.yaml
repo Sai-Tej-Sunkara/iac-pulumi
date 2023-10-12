@@ -1,5 +1,5 @@
 config:
   aws:profile: demo
   aws:region: us-east-1
-  iac-pulumi:profile: demo
-  iac-pulumi:vpcCidrBlock: 10.0.0.0/16
+  iac-webapp:profile: demo
+  iac-webapp:vpcCidrBlock: 10.8.64.0/24
