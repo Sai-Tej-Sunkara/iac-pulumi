@@ -2,8 +2,11 @@
 const pulumi = require("@pulumi/pulumi");
 const aws = require("@pulumi/aws");
 
+const config = new pulumi.Config();
+const vpcCidrBlock = config.require("vpcCidrBlock");
+
 const vpc = new aws.ec2.Vpc("webapp-vpc", {
-    cidrBlock: "10.0.0.0/16",
+    cidrBlock: vpcCidrBlock,
 });
 
 const internetGateway = new aws.ec2.InternetGateway("vpc-internet-gateway", {
@@ -15,23 +18,33 @@ const availabilityZones = pulumi.output(aws.getAvailabilityZones({})).apply(azs 
 availabilityZones.apply(availabilityZone => {
     const totalZones = availabilityZone.length;
 
-    var createSubnets = (type, offsetStart) => {
+    const createSubnets = (type, offsetStart) => {
         const subnets = [];
         let cidrOffset = offsetStart;
-
+        const vpcCidrParts = vpcCidrBlock.split(".");
+        const subnetMask = vpcCidrBlock.endsWith("/24") ? 27 : 24;
+    
         for (let i = 0; i < 3; i++) {
             const availabilityZoneIndex = i % totalZones;
+    
+            let cidr;
+            if (subnetMask === 27) {
+                cidr = `${vpcCidrParts[0]}.${vpcCidrParts[1]}.${vpcCidrParts[2]}.${i * 32 + cidrOffset * 32}/27`;
+            } else {
+                cidr = `${vpcCidrParts[0]}.${vpcCidrParts[1]}.${i * 10 + cidrOffset}.0/24`;
+            }
+    
             subnets.push(new aws.ec2.Subnet(type + "-subnet-" + i.toString(), {
                 vpcId: vpc.id,
-                cidrBlock: `10.0.${i * 10 + cidrOffset}.0/24`,
+                cidrBlock: cidr,
                 availabilityZone: availabilityZone[availabilityZoneIndex],
                 mapPublicIpOnLaunch: type === "public",
             }));
             cidrOffset += 1;
         }
-
+    
         return subnets;
-    }
+    };    
 
     const publicSubnets = createSubnets("public", 0);
     const privateSubnets = createSubnets("private", 3);
@@ -63,4 +76,4 @@ availabilityZones.apply(availabilityZone => {
             subnetId: subnet.id,
         });
     });
-})
+});
