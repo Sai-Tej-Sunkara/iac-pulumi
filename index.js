@@ -8,6 +8,17 @@ const vpcCidrBlock = config.require("vpcCidrBlock");
 
 const applicationPort = process.env.APPLICATIONPORT;
 const allowedPorts = process.env.ALLOWED_PORTS.split(",").map(Number);
+const customAmiId = process.env.PACKER_AMI_ID;
+const numberOfSubnets = process.env.NUMBER_OF_SUBNETS;
+const instance = process.env.INSTANCE;
+const privateSubnetNumber = process.env.PRIVATE_SUBNET_INDEX;
+const isAssociatePublicIpAddress = process.env.ASSOCIATE_PUBLIC_IP_ADDRESS;
+const volumeSize = process.env.VOLUME_SIZE;
+const volumeType = process.env.VOLUME_TYPE;
+const isDeleteOnTermination = process.env.IS_DELETE_ON_TERMINATION;
+const isDisableApiTermination = process.env.IS_DISABLE_API_TERMINATION;
+const instanceInitiatedShutdownBehavior = process.env.BEHAVIOUR_ON_TERMINATION;
+const key = process.env.KEY_NAME;
 
 const vpc = new aws.ec2.Vpc("webapp-vpc", {
     cidrBlock: vpcCidrBlock,
@@ -28,7 +39,7 @@ availabilityZones.apply(availabilityZone => {
         const vpcCidrParts = vpcCidrBlock.split(".");
         const subnetMask = vpcCidrBlock.endsWith("/24") ? 27 : 24;
     
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < numberOfSubnets; i++) {
             const availabilityZoneIndex = i % totalZones;
     
             let cidr;
@@ -80,22 +91,44 @@ availabilityZones.apply(availabilityZone => {
             subnetId: subnet.id,
         });
     });
-});
 
-const applicationSecurityGroup = new aws.ec2.SecurityGroup("webapp-security-group", {
-    vpcId: vpc.id,
-    ingress: [
-        ...allowedPorts.map(port => ({
-            protocol: "tcp",
-            fromPort: port,
-            toPort: port,
-            cidrBlocks: ["0.0.0.0/0"],
-        })),
-        {
-            protocol: "tcp",
-            fromPort: applicationPort,
-            toPort: applicationPort,
-            cidrBlocks: ["0.0.0.0/0"],
+    const applicationSecurityGroup = new aws.ec2.SecurityGroup("webapp-security-group", {
+        vpcId: vpc.id,
+        ingress: [
+            ...allowedPorts.map(port => ({
+                protocol: "tcp",
+                fromPort: port,
+                toPort: port,
+                cidrBlocks: ["0.0.0.0/0"],
+            })),
+            {
+                protocol: "tcp",
+                fromPort: applicationPort,
+                toPort: applicationPort,
+                cidrBlocks: ["0.0.0.0/0"],
+            },
+        ],
+    });
+
+    const ec2Instance = new aws.ec2.Instance("webapp-ec2-instance", {
+        ami: customAmiId,
+        instanceType: instance,
+        keyName: key,
+        vpcSecurityGroupIds: [applicationSecurityGroup.id],
+        subnetId: privateSubnets[privateSubnetNumber].id,
+        associatePublicIpAddress: isAssociatePublicIpAddress,
+        rootBlockDevice: {
+            volumeSize: volumeSize,
+            volumeType: volumeType,
+            deleteOnTermination: isDeleteOnTermination,
         },
-    ],
+        creditSpecification: {
+            cpuCredits: "standard",
+        },
+        tags: {
+            Name: "WebApp EC2 Instance - Debain 12",
+        },
+        disableApiTermination: isDisableApiTermination,
+        instanceInitiatedShutdownBehavior: instanceInitiatedShutdownBehavior,
+    });
 });
