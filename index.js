@@ -10,6 +10,7 @@ const applicationPort = process.env.APPLICATIONPORT;
 const allowedPorts = process.env.ALLOWED_PORTS.split(",").map(Number);
 const customAmiId = process.env.PACKER_AMI_ID;
 const numberOfSubnets = process.env.NUMBER_OF_SUBNETS;
+const isNumberOfSubnetsSameAsAvaialabilityZones = process.env.IS_NUMBER_OF_SUBNETS_SAME_AS_AVAILABILITY_ZONES;
 const instance = process.env.INSTANCE;
 const subnetNumber = process.env.SUBNET_INDEX;
 const isPublicSubnet = process.env.IS_PUBLIC_SUBNET;
@@ -33,6 +34,8 @@ const availabilityZones = pulumi.output(aws.getAvailabilityZones({})).apply(azs 
 
 availabilityZones.apply(availabilityZone => {
     const totalZones = availabilityZone.length;
+
+    numberOfSubnets = isNumberOfSubnetsSameAsAvaialabilityZones?totalZones:numberOfSubnets;
 
     const createSubnets = (type, offsetStart) => {
         const subnets = [];
