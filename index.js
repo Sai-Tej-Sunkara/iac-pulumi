@@ -10,7 +10,6 @@ const applicationPort = process.env.APPLICATIONPORT;
 const allowedPorts = process.env.ALLOWED_PORTS.split(",").map(Number);
 const customAmiId = process.env.PACKER_AMI_ID;
 const numberOfSubnets = process.env.NUMBER_OF_SUBNETS;
-const isNumberOfSubnetsSameAsAvaialabilityZones = process.env.IS_NUMBER_OF_SUBNETS_SAME_AS_AVAILABILITY_ZONES;
 const instance = process.env.INSTANCE;
 const subnetNumber = process.env.SUBNET_INDEX;
 const isPublicSubnet = process.env.IS_PUBLIC_SUBNET;
@@ -34,8 +33,9 @@ const availabilityZones = pulumi.output(aws.getAvailabilityZones({})).apply(azs 
 
 availabilityZones.apply(availabilityZone => {
     const totalZones = availabilityZone.length;
-
-    numberOfSubnets = isNumberOfSubnetsSameAsAvaialabilityZones?totalZones:numberOfSubnets;
+    if(totalZones<3) {
+        numberOfSubnets = totalZones
+    }
 
     const createSubnets = (type, offsetStart) => {
         const subnets = [];
@@ -96,7 +96,7 @@ availabilityZones.apply(availabilityZone => {
         });
     });
 
-    const applicationSecurityGroup = new aws.ec2.SecurityGroup("webapp-security-group", {
+    const applicationSecurityGroup = new aws.ec2.SecurityGroup("application-security-group", {
         vpcId: vpc.id,
         ingress: [
             ...allowedPorts.map(port => ({
