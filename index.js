@@ -37,6 +37,8 @@ availabilityZones.apply(availabilityZone => {
         numberOfSubnets = totalZones
     }
 
+    numberOfSubnets = isNumberOfSubnetsSameAsAvaialabilityZones?totalZones:numberOfSubnets;
+
     const createSubnets = (type, offsetStart) => {
         const subnets = [];
         let cidrOffset = offsetStart;
