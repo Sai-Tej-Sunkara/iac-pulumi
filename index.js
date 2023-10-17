@@ -11,7 +11,8 @@ const allowedPorts = process.env.ALLOWED_PORTS.split(",").map(Number);
 const customAmiId = process.env.PACKER_AMI_ID;
 const numberOfSubnets = process.env.NUMBER_OF_SUBNETS;
 const instance = process.env.INSTANCE;
-const privateSubnetNumber = process.env.PRIVATE_SUBNET_INDEX;
+const subnetNumber = process.env.SUBNET_INDEX;
+const isPublicSubnet = process.env.IS_PUBLIC_SUBNET;
 const isAssociatePublicIpAddress = process.env.ASSOCIATE_PUBLIC_IP_ADDRESS;
 const volumeSize = process.env.VOLUME_SIZE;
 const volumeType = process.env.VOLUME_TYPE;
@@ -115,7 +116,7 @@ availabilityZones.apply(availabilityZone => {
         instanceType: instance,
         keyName: key,
         vpcSecurityGroupIds: [applicationSecurityGroup.id],
-        subnetId: privateSubnets[privateSubnetNumber].id,
+        subnetId: isPublicSubnet?publicSubnets[subnetNumber].id:privateSubnets[subnetNumber].id,
         associatePublicIpAddress: isAssociatePublicIpAddress,
         rootBlockDevice: {
             volumeSize: volumeSize,
