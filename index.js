@@ -1,9 +1,13 @@
 "use strict";
 const pulumi = require("@pulumi/pulumi");
 const aws = require("@pulumi/aws");
+require("dotenv").config()
 
 const config = new pulumi.Config();
 const vpcCidrBlock = config.require("vpcCidrBlock");
+
+const applicationPort = process.env.APPLICATIONPORT;
+const allowedPorts = process.env.ALLOWED_PORTS.split(",").map(Number);
 
 const vpc = new aws.ec2.Vpc("webapp-vpc", {
     cidrBlock: vpcCidrBlock,
@@ -76,4 +80,22 @@ availabilityZones.apply(availabilityZone => {
             subnetId: subnet.id,
         });
     });
+});
+
+const applicationSecurityGroup = new aws.ec2.SecurityGroup("webapp-security-group", {
+    vpcId: vpc.id,
+    ingress: [
+        ...allowedPorts.map(port => ({
+            protocol: "tcp",
+            fromPort: port,
+            toPort: port,
+            cidrBlocks: ["0.0.0.0/0"],
+        })),
+        {
+            protocol: "tcp",
+            fromPort: applicationPort,
+            toPort: applicationPort,
+            cidrBlocks: ["0.0.0.0/0"],
+        },
+    ],
 });
