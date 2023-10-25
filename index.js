@@ -31,6 +31,11 @@ const internetGateway = new aws.ec2.InternetGateway("vpc-internet-gateway", {
 
 const availabilityZones = pulumi.output(aws.getAvailabilityZones({})).apply(azs => azs.names);
 
+const rdsParameterGroup = new aws.rds.ParameterGroup("rds-parameter-group", {
+    family: "mysql8.0",  // postgres or mariadb
+    description: "RDS Parameter Group for MySQL DB",
+});
+
 availabilityZones.apply(async availabilityZone => {
     const totalZones = availabilityZone.length;
     if(totalZones<Number(numberOfSubnets)) {
@@ -129,21 +134,21 @@ availabilityZones.apply(async availabilityZone => {
         },
     });
 
-    const rdsParameterGroup = new aws.rds.ParameterGroup("rds-parameter-group", {
-        family: "mysql8.0",  // postgres or mariadb
-        description: "RDS Parameter Group for MySQL DB",
-    });
 
+    const dbSubnetGroup = new aws.rds.SubnetGroup("db-subnet-group", {
+        subnetIds: privateSubnets.map(subnet => subnet.id),
+    });
+    
     const rdsInstance = new aws.rds.Instance("rds-instance", {
         engine: "mysql",  // "postgres" or "mariadb"
         instanceClass: "db.t2.micro",
-        dbSubnetGroupName: privateSubnets[0].name,
+        dbSubnetGroupName: dbSubnetGroup.name,
         publiclyAccessible: false,
         allocatedStorage: 20,
         storageType: volumeType,
+        dbName: process.env.DATABASE,
         username: process.env.USER,
         password: process.env.PASS,
-        dbName: process.env.DATABASE,
         parameterGroupName: rdsParameterGroup.name,
         skipFinalSnapshot: true,
         vpcSecurityGroupIds: [dbSecurityGroup.id],
