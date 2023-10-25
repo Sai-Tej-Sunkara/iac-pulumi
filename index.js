@@ -31,7 +31,7 @@ const internetGateway = new aws.ec2.InternetGateway("vpc-internet-gateway", {
 
 const availabilityZones = pulumi.output(aws.getAvailabilityZones({})).apply(azs => azs.names);
 
-availabilityZones.apply(availabilityZone => {
+availabilityZones.apply(async availabilityZone => {
     const totalZones = availabilityZone.length;
     if(totalZones<Number(numberOfSubnets)) {
         numberOfSubnets = totalZones;
@@ -114,8 +114,56 @@ availabilityZones.apply(availabilityZone => {
         ],
     });
 
+    const dbSecurityGroup = new aws.ec2.SecurityGroup("database-security-group", {
+        vpcId: vpc.id,
+        ingress: [
+            {
+                protocol: "tcp",
+                fromPort: 3306,
+                toPort: 3306,
+                securityGroups: [applicationSecurityGroup.id],
+            },
+        ],
+        tags: {
+            Name: "database-security-group"
+        },
+    });
+
+    const rdsParameterGroup = new aws.rds.ParameterGroup("rds-parameter-group", {
+        family: "mysql",  // postgres or mariadb
+        description: "RDS Parameter Group for MySQL DB",
+    });
+
+    const rdsInstance = new aws.rds.Instance("rds-instance", {
+        engine: "mysql",  // "postgres" or "mariadb"
+        instanceClass: "db.t2.micro",
+        dbSubnetGroupName: privateSubnets[0].name,
+        publiclyAccessible: false,
+        allocatedStorage: 20,
+        storageType: volumeType,
+        name: "csye6225",
+        username: process.env.RDS_USER,
+        password: process.env.RDS_PASS,
+        dbName: process.env.DATABASE,
+        parameterGroupName: rdsParameterGroup.name,
+        skipFinalSnapshot: true,
+        vpcSecurityGroupIds: [dbSecurityGroup.id],
+        multiAz: false,
+        identifier: "csye6225",
+    });
+
+    const latestAmiCreated = await aws.ec2.getAmi({
+        filters: [
+            {
+                name: "name",
+                values: ["WEBAPP*"]
+            }
+        ],
+        mostRecent: true
+    }).id;
+
     const ec2Instance = new aws.ec2.Instance("webapp-ec2-instance", {
-        ami: customAmiId,
+        ami: latestAmiCreated,
         instanceType: instance,
         keyName: key,
         vpcSecurityGroupIds: [applicationSecurityGroup.id],
@@ -134,7 +182,8 @@ availabilityZones.apply(availabilityZone => {
         },
         disableApiTermination: isDisableApiTermination,
         instanceInitiatedShutdownBehavior: instanceInitiatedShutdownBehavior,
-        userData: `
+        userData: pulumi.all([rdsInstance.address, rdsInstance.username, rdsInstance.password])
+        .apply(([rdsAddress, rdsUsername, rdsPassword]) => `
             cat <<EOF | sudo tee /etc/systemd/system/webapp.service
             [Unit]
             Description=app.js-service file to start the server instance in ec2
@@ -143,11 +192,11 @@ availabilityZones.apply(availabilityZone => {
             After=network-online.target
             
             [Service]
-            Environment="DATABASE=$DATABASE"
-            Environment="HOST=$HOST"
-            Environment="USER=$USER"
-            Environment="PASS=$PASS"
-            Environment="DIALECT=$DIALECT"
+            Environment="DATABASE=${process.env.DATABASE}"
+            Environment="HOST=${rdsAddress}"
+            Environment="USER=${rdsUsername}"
+            Environment="PASS=${rdsPassword}"
+            Environment="DIALECT=${process.env.DIALECT}"
             Type=simple
             User=admin
             WorkingDirectory=/home/admin/webapp/
@@ -160,8 +209,6 @@ availabilityZones.apply(availabilityZone => {
             sudo systemctl daemon-reload
             sudo systemctl enable webapp.service
             sudo systemctl start webapp.service
-        `
+        `)
     });
-
-
 });
