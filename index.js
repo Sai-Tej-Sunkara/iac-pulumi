@@ -1,4 +1,7 @@
 "use strict";
+const path = require('path');
+const os = require('os');
+const fs = require('fs');
 const pulumi = require("@pulumi/pulumi");
 const aws = require("@pulumi/aws");
 require("dotenv").config()
@@ -21,8 +24,16 @@ const isDisableApiTermination = process.env.IS_DISABLE_API_TERMINATION;
 const instanceInitiatedShutdownBehavior = process.env.BEHAVIOUR_ON_TERMINATION;
 const key = process.env.KEY_NAME;
 
+const pubKey = config.require("pubKey");
+const publicKey = path.join(os.homedir(), pubKey);
+const keyContent = fs.readFileSync(publicKey, "utf8");
+
 const vpc = new aws.ec2.Vpc("webapp-vpc", {
     cidrBlock: vpcCidrBlock,
+});
+
+const keyPair = new aws.ec2.KeyPair("key-pair-ec2", {
+    publicKey: keyContent,
 });
 
 const internetGateway = new aws.ec2.InternetGateway("vpc-internet-gateway", {
@@ -216,7 +227,7 @@ sudo systemctl status webapp.service
     const ec2Instance = new aws.ec2.Instance("webapp-ec2-instance", {
         ami: latestAmiCreated,
         instanceType: instance,
-        keyName: key,
+        keyName: keyPair.keyName,
         vpcSecurityGroupIds: [applicationSecurityGroup.id],
         subnetId: isPublicSubnet?publicSubnets[subnetNumber].id:privateSubnets[subnetNumber].id,
         associatePublicIpAddress: isAssociatePublicIpAddress,
