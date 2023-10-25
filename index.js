@@ -179,7 +179,7 @@ availabilityZones.apply(async availabilityZone => {
         allocatedStorage: 20,
         storageType: volumeType,
         dbName: process.env.DATABASE,
-        username: process.env.USER,
+        username: process.env.USER_DB,
         password: process.env.PASS,
         parameterGroupName: rdsParameterGroup.name,
         skipFinalSnapshot: true,
