@@ -22,7 +22,6 @@ const volumeType = process.env.VOLUME_TYPE;
 const isDeleteOnTermination = process.env.IS_DELETE_ON_TERMINATION;
 const isDisableApiTermination = process.env.IS_DISABLE_API_TERMINATION;
 const instanceInitiatedShutdownBehavior = process.env.BEHAVIOUR_ON_TERMINATION;
-const key = process.env.KEY_NAME;
 
 const pubKey = config.require("pubKey");
 const publicKey = path.join(os.homedir(), pubKey);
@@ -153,6 +152,20 @@ availabilityZones.apply(async availabilityZone => {
         },
     });
 
+    applicationSecurityGroup.egress = [
+        {
+            protocol: "tcp",
+            fromPort: 3306,
+            toPort: 3306,
+            cidrBlocks: [vpc.cidrBlock],
+        },
+        {
+            protocol: "tcp",
+            fromPort: 3306,
+            toPort: 3306,
+            securityGroups: [dbSecurityGroup.id],
+        },
+    ];
 
     const dbSubnetGroup = new aws.rds.SubnetGroup("db-subnet-group", {
         subnetIds: privateSubnets.map(subnet => subnet.id),
