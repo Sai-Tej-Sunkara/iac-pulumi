@@ -130,7 +130,7 @@ availabilityZones.apply(async availabilityZone => {
     });
 
     const rdsParameterGroup = new aws.rds.ParameterGroup("rds-parameter-group", {
-        family: "mysql",  // postgres or mariadb
+        family: "mysql8.0",  // postgres or mariadb
         description: "RDS Parameter Group for MySQL DB",
     });
 
@@ -141,7 +141,6 @@ availabilityZones.apply(async availabilityZone => {
         publiclyAccessible: false,
         allocatedStorage: 20,
         storageType: volumeType,
-        name: "csye6225",
         username: process.env.USER,
         password: process.env.PASS,
         dbName: process.env.DATABASE,
@@ -152,7 +151,7 @@ availabilityZones.apply(async availabilityZone => {
         identifier: "csye6225",
     });
 
-    const latestAmiCreated = await aws.ec2.getAmi({
+    const latestAmiCreated = pulumi.output(aws.ec2.getAmi({
         filters: [
             {
                 name: "name",
@@ -160,7 +159,7 @@ availabilityZones.apply(async availabilityZone => {
             }
         ],
         mostRecent: true
-    }).id;
+    })).apply(ami => ami.id);
 
     const ec2Instance = new aws.ec2.Instance("webapp-ec2-instance", {
         ami: latestAmiCreated,
