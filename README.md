@@ -56,39 +56,62 @@ pulumi destroy
 
 # Node.js App Deployment with Systemd
 
-This guide covers setting up a Node.js application to run automatically on a virtual machine using `systemd`.
+This document provides a comprehensive guide on deploying a Node.js application on a Linux-based virtual machine using `systemd`.
+
+## Table of Contents
+
+- [Introduction](#introduction)
+- [Running Your Node.js App With Systemd](#1-running-your-nodejs-app-with-systemd)
+- [Setting Up Autorun for JavaScript Using Systemd](#2-setting-up-autorun-for-javascript-using-systemd)
+- [Understanding Systemd Units and Unit Files](#3-understanding-systemd-units-and-unit-files)
+
+## Introduction
+
+[Systemd](https://www.freedesktop.org/wiki/Software/systemd/) is an init system used in Linux distributions to bootstrap the user space and manage all processes subsequently. It provides functionalities like starting, stopping, and restarting services, and it's integral in ensuring services run reliably and can recover from failures.
+
+In the context of deploying web applications, `systemd` can ensure that your Node.js app is always running, even after system reboots or application crashes.
 
 ## 1. Running Your Node.js App With Systemd
 
-Systemd is a system and service manager for Linux operating systems. In the context of your application, it is being used to manage the lifecycle of your Node.js app on an EC2 instance.
+Systemd manages and configures the application process through a service unit. For your Node.js application, the systemd service file, named `webapp.service`, is provided in the code. This service file ensures that:
 
-In the provided code, a systemd service file `webapp.service` is created and configured to run the Node.js application. This service file ensures that the app starts automatically upon system boot and restarts if it crashes.
+- The app starts automatically when the machine boots up.
+- The app restarts if it happens to crash.
 
-To utilize this functionality:
+### Steps:
 
-1. Ensure your EC2 instance's OS supports systemd (most modern Linux distributions do).
-2. The service file is placed in `/etc/systemd/system/` directory.
-3. Commands are executed to reload the systemd manager configuration, to start the service during boot, and to initiate the service.
+1. **Ensure Systemd Compatibility:** Ensure that your EC2 instance's operating system supports `systemd`. Modern Linux distributions like Ubuntu 18.04 and later, CentOS 7 and later, and Debian 8 and later support it.
+   
+2. **Placement of Service File:** The service file is strategically placed in the `/etc/systemd/system/` directory which is the location where custom service files are read from.
 
-## 2. How To Setup Autorun a JavaScript Using Systemd
+3. **Systemd Commands**:
+    - `sudo systemctl daemon-reload`: Reloads the systemd manager configuration.
+    - `sudo systemctl enable webapp.service`: Ensures the service starts on boot.
+    - `sudo systemctl start webapp.service`: Initiates the service.
+    - `sudo systemctl status webapp.service`: Shows the status of the service.
 
-In the provided code, the following steps are taken to set up autorun:
+## 2. Setting Up Autorun for JavaScript Using Systemd
 
-1. A service file named `webapp.service` is created. This file describes how to manage the service.
-2. The service is set to run the Node.js application found in `/home/admin/webapp/app.js`.
-3. Systemd is instructed to reload its configuration.
-4. The service is enabled, ensuring it runs on boot.
-5. The service is started.
-6. The status of the service is displayed.
+By setting up autorun, you ensure that your application is always running. The provided code manages this using the following steps:
+
+1. **Service File Creation:** The `webapp.service` file describes the service's specifics, including the path to the application and the environment variables it requires.
+
+2. **Service File Configuration:** The service runs the Node.js application located at `/home/admin/webapp/app.js`.
+
+3. **Reload, Enable, Start, and Check**:
+    - Systemd is instructed to reload its configuration to recognize the new service file.
+    - The service is enabled to guarantee its activation on boot.
+    - The service starts immediately.
+    - The service's status provides feedback on its current state.
 
 ## 3. Understanding Systemd Units and Unit Files
 
-- **Unit:** In systemd, a unit refers to any resource that the system knows how to operate on and manage. This can be a service, a mounted file system, a device, etc.
-- **Unit File:** A unit file is a configuration file that describes the properties of the unit. For example, for services, a `.service` file describes how to start or stop the service, under which circumstances, and its dependencies.
-
-In the provided code, the unit is the Node.js application, and the unit file is `webapp.service`. This file is responsible for describing how to run the app as a service using systemd.
+- **Unit:** Units are resources that `systemd` knows how to manage. They are identified by their type, such as service, mount, device, etc. For the provided code, the unit of interest is the service that runs the Node.js app.
+  
+- **Unit File:** This is a configuration file that defines properties and behaviors of the unit. It specifies how to start or stop the unit, when to start it, dependencies, and other crucial information.
+  
+  In our Node.js deployment scenario, the `webapp.service` file serves as the unit file. It encapsulates instructions on how to run the application as a service.
 
 ---
 
-**Note**: Ensure you have the necessary environment variables and configurations set up, as they are utilized within the provided code. Also, ensure your EC2 instance has Node.js installed and is compatible with the systemd configuration.
-
+**Note**: Before executing the provided code, ensure all necessary environment variables and configurations are correctly set up. The EC2 instance should have Node.js installed, and it should be compatible with the provided systemd configuration.
