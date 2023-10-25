@@ -2,4 +2,5 @@ config:
   aws:profile: dev
   aws:region: us-east-1
   iac-webapp:profile: dev
+  iac-webapp:pubKey: "/.ssh/key_pair.pub"
   iac-webapp:vpcCidrBlock: 10.1.63.0/24
