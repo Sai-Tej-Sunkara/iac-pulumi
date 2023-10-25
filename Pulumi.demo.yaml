@@ -2,4 +2,4 @@ config:
   aws:profile: demo
   aws:region: us-east-1
   iac-webapp:profile: demo
-  iac-webapp:vpcCidrBlock: 10.8.64.0/24
+  iac-webapp:vpcCidrBlock: 10.1.63.0/24
