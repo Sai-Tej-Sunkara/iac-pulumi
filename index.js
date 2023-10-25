@@ -166,6 +166,17 @@ availabilityZones.apply(async availabilityZone => {
         mostRecent: true
     })).apply(ami => ami.id);
 
+    const dataSettings = pulumi
+    .all([rdsInstance.address, rdsInstance.username, rdsInstance.password])
+    .apply(([host, user, pass]) => {
+      return {
+        HOST: host,
+        USER: user,
+        PASS: pass
+      };
+    });
+
+  dataSettings.apply((settings) => {
     const ec2Instance = new aws.ec2.Instance("webapp-ec2-instance", {
         ami: latestAmiCreated,
         instanceType: instance,
@@ -186,33 +197,33 @@ availabilityZones.apply(async availabilityZone => {
         },
         disableApiTermination: isDisableApiTermination,
         instanceInitiatedShutdownBehavior: instanceInitiatedShutdownBehavior,
-        userData: pulumi.all([rdsInstance.address, rdsInstance.username, rdsInstance.password])
-        .apply(([rdsAddress, rdsUsername, rdsPassword]) => `
-            cat <<EOF | sudo tee /etc/systemd/system/webapp.service
-            [Unit]
-            Description=app.js-service file to start the server instance in ec2
+        userData: `#!/bin/bash
+            sudo -i
+            cat > /etc/systemd/system/webapp.service << EOF
+            [Unit]
+            Description=app.js-service file to start the server instance in ec2
             Documentation=https://fall2023.csye6225.cloud/
-            Wants=network-online.target
-            After=network-online.target
-            
-            [Service]
-            Environment="DATABASE=${process.env.DATABASE}"
-            Environment="HOST=${rdsAddress}"
-            Environment="USER=${rdsUsername}"
-            Environment="PASS=${rdsPassword}"
+            Wants=network-online.target
+            After=network-online.target
+            [Service]
+            Environment="DATABASE=${process.env.DATABASE}"
+            Environment="HOST=${settings.HOST}"
+            Environment="USER=${settings.USER}"
+            Environment="PASS=${settings.PASS}"
             Environment="DIALECT=${process.env.DIALECT}"
-            Type=simple
-            User=admin
-            WorkingDirectory=/home/admin/webapp/
+            Type=simple
+            User=admin
+            WorkingDirectory=/home/admin/webapp/
             ExecStart=/usr/bin/node /home/admin/webapp/app.js
-            Restart=on-failure
-            
-            [Install]
-            WantedBy=multi-user.target
-            EOF
-            sudo systemctl daemon-reload
-            sudo systemctl enable webapp.service
-            sudo systemctl start webapp.service
-        `)
+            Restart=on-failure
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+            systemctl daemon-reload
+            systemctl enable webapp.service
+            systemctl start webapp.service
+            systemctl status webapp.service
+        `
+    });
     });
 });
