@@ -134,5 +134,34 @@ availabilityZones.apply(availabilityZone => {
         },
         disableApiTermination: isDisableApiTermination,
         instanceInitiatedShutdownBehavior: instanceInitiatedShutdownBehavior,
+        userData: `
+            cat <<EOF | sudo tee /etc/systemd/system/webapp.service
+            [Unit]
+            Description=app.js-service file to start the server instance in ec2
+            Documentation=https://fall2023.csye6225.cloud/
+            Wants=network-online.target
+            After=network-online.target
+            
+            [Service]
+            Environment="DATABASE=$DATABASE"
+            Environment="HOST=$HOST"
+            Environment="USER=$USER"
+            Environment="PASS=$PASS"
+            Environment="DIALECT=$DIALECT"
+            Type=simple
+            User=admin
+            WorkingDirectory=/home/admin/webapp/
+            ExecStart=/usr/bin/node /home/admin/webapp/app.js
+            Restart=on-failure
+            
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+            sudo systemctl daemon-reload
+            sudo systemctl enable webapp.service
+            sudo systemctl start webapp.service
+        `
     });
+
+
 });
