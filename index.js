@@ -117,6 +117,14 @@ availabilityZones.apply(async availabilityZone => {
                 cidrBlocks: ["0.0.0.0/0"],
             },
         ],
+        egress: [
+            {
+                protocol: "tcp",
+                fromPort: 3306,
+                toPort: 3306,
+                cidrBlocks: [vpc.cidrBlock],
+            },
+        ],
     });
 
     const dbSecurityGroup = new aws.ec2.SecurityGroup("database-security-group", {
@@ -167,16 +175,44 @@ availabilityZones.apply(async availabilityZone => {
     })).apply(ami => ami.id);
 
     const dataSettings = pulumi
-    .all([rdsInstance.address, rdsInstance.username, rdsInstance.password])
-    .apply(([host, user, pass]) => {
+    .all([rdsInstance.address, rdsInstance.username, rdsInstance.password, rdsInstance.dbName])
+    .apply(([host, user, pass, database]) => {
       return {
         HOST: host,
         USER: user,
-        PASS: pass
+        PASS: pass,
+        DATABASE: database
       };
     });
 
   dataSettings.apply((settings) => {
+    const userData =
+`#!/bin/bash
+cat <<EOF | sudo tee /etc/systemd/system/webapp.service
+[Unit]
+Description=app.js-service file to start the server instance in ec2
+Documentation=https://fall2023.csye6225.cloud/
+Wants=network-online.target
+After=network-online.target
+[Service]
+Environment="DATABASE=${process.env.DATABASE}"
+Environment="HOST=${settings.HOST}"
+Environment="USER=${settings.USER}"
+Environment="PASS=${settings.PASS}"
+Environment="DIALECT=${process.env.DIALECT}"
+Type=simple
+User=admin
+WorkingDirectory=/home/admin/webapp/
+ExecStart=/usr/bin/node /home/admin/webapp/app.js
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable webapp.service
+sudo systemctl start webapp.service
+sudo systemctl status webapp.service
+`;
     const ec2Instance = new aws.ec2.Instance("webapp-ec2-instance", {
         ami: latestAmiCreated,
         instanceType: instance,
@@ -197,33 +233,7 @@ availabilityZones.apply(async availabilityZone => {
         },
         disableApiTermination: isDisableApiTermination,
         instanceInitiatedShutdownBehavior: instanceInitiatedShutdownBehavior,
-        userData: `#!/bin/bash
-            sudo -i
-            cat > /etc/systemd/system/webapp.service << EOF
-            [Unit]
-            Description=app.js-service file to start the server instance in ec2
-            Documentation=https://fall2023.csye6225.cloud/
-            Wants=network-online.target
-            After=network-online.target
-            [Service]
-            Environment="DATABASE=${process.env.DATABASE}"
-            Environment="HOST=${settings.HOST}"
-            Environment="USER=${settings.USER}"
-            Environment="PASS=${settings.PASS}"
-            Environment="DIALECT=${process.env.DIALECT}"
-            Type=simple
-            User=admin
-            WorkingDirectory=/home/admin/webapp/
-            ExecStart=/usr/bin/node /home/admin/webapp/app.js
-            Restart=on-failure
-            [Install]
-            WantedBy=multi-user.target
-            EOF
-            systemctl daemon-reload
-            systemctl enable webapp.service
-            systemctl start webapp.service
-            systemctl status webapp.service
-        `
+        userData: userData
     });
     });
 });
