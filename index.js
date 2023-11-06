@@ -172,7 +172,7 @@ availabilityZones.apply(async availabilityZone => {
     });
     
     const rdsInstance = new aws.rds.Instance("rds-instance", {
-        engine: "mysql",  // "postgres" or "mariadb"
+        engine: "mysql",
         instanceClass: "db.t2.micro",
         dbSubnetGroupName: dbSubnetGroup.name,
         publiclyAccessible: false,
@@ -237,6 +237,27 @@ sudo systemctl enable webapp.service
 sudo systemctl start webapp.service
 sudo systemctl status webapp.service
 `;
+    const ec2Csye6225Role = new aws.iam.Role("EC2-CSYE6225", {
+          name: "EC2-CSYE6225",
+          assumeRolePolicy: {
+              Version: "2012-10-17",
+              Statement: [{
+                  Action: "sts:AssumeRole",
+                  Effect: "Allow",
+                  Principal: {
+                      Service: "ec2.amazonaws.com",
+                  },
+              }],
+          },
+    });    
+    const cloudwatchAgentPolicyAttachment = new aws.iam.RolePolicyAttachment("cloudwatch-agent-policy-attachment", {
+        policyArn: "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
+        role: ec2Csye6225Role.name,
+    });
+    const ec2InstanceProfile = new aws.iam.InstanceProfile("EC2-CSYE6225-InstanceProfile", {
+      name: "ec2_profile",
+      role: ec2Csye6225Role.name,
+    });
     const ec2Instance = new aws.ec2.Instance("webapp-ec2-instance", {
         ami: latestAmiCreated,
         instanceType: instance,
@@ -259,5 +280,23 @@ sudo systemctl status webapp.service
         instanceInitiatedShutdownBehavior: instanceInitiatedShutdownBehavior,
         userData: userData
     });
+
+    const domainName = awsProfile === "dev" ? devDomain : prodDomain;
+    console.log(domainName);
+    const selectedZone = aws.route53.getZone({ name: domainName }, { async: true });
+    console.log(selectedZone);
+    const newRecord = selectedZone.then(zoneInfo => {
+      return new aws.route53.Record("new_record", {
+        zoneId: selectedZone.then(zone => zone.zoneId),
+        name: selectedZone.then(zone => zone.name),
+        type: "A",
+        records: [webappServer.publicIp],
+        ttl: 60,
+      });
+    });
+    const webappLogGroup = new aws.cloudwatch.LogGroup("webapp_log_group", {
+      name: "csye6225",
+    });
+
     });
 });
