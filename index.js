@@ -9,7 +9,8 @@ require("dotenv").config()
 const config = new pulumi.Config();
 const awsProfile = config.require("profile");
 const vpcCidrBlock = config.require("vpcCidrBlock");
-
+const domainDev = config.require("domainDev");
+const domainProd = config.require("domainProd");
 const applicationPort = process.env.APPLICATIONPORT;
 const allowedPorts = process.env.ALLOWED_PORTS.split(",").map(Number);
 const customAmiId = process.env.PACKER_AMI_ID;
@@ -135,6 +136,12 @@ availabilityZones.apply(async availabilityZone => {
                 toPort: 3306,
                 cidrBlocks: [vpc.cidrBlock],
             },
+            {
+                protocol: "tcp",
+                fromPort: applicationPort,
+                toPort: applicationPort,
+                cidrBlocks: ["0.0.0.0/0"],
+            },
         ],
     });
 
@@ -213,13 +220,13 @@ availabilityZones.apply(async availabilityZone => {
   dataSettings.apply((settings) => {
     const userData =
 `#!/bin/bash
-sudo touch /home/webapp-user/.env
-sudo echo DATABASE=${process.env.DATABASE} >> /home/webapp-user/.env
-sudo echo HOST=${settings.HOST} >> /home/webapp-user/.env
-sudo echo USER=${settings.USER} >> /home/webapp-user/.env
-sudo echo PASS=${settings.PASS} >> /home/webapp-user/.env
-sudo echo DIALECT=${process.env.DIALECT} >> /home/webapp-user/.env
-sudo chown webapp-user:webapp-user /home/webapp-user/.env
+sudo touch /home/saitejsunkara/.env
+sudo echo DATABASE=${process.env.DATABASE} >> /home/saitejsunkara/.env
+sudo echo HOST=${settings.HOST} >> /home/saitejsunkara/.env
+sudo echo USER=${settings.USER} >> /home/saitejsunkara/.env
+sudo echo PASS=${settings.PASS} >> /home/saitejsunkara/.env
+sudo echo DIALECT=${process.env.DIALECT} >> /home/saitejsunkara/.env
+sudo chown saitejsunkara:saitejsunkara /home/saitejsunkara/.env
 sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
     -a fetch-config \
     -m ec2 \
@@ -277,7 +284,7 @@ sudo systemctl enable amazon-cloudwatch-agent
         userData: userData
     });
 
-    const domain = awsProfile === "dev" ? devDomain : prodDomain;
+    const domain = awsProfile === "dev" ? domainDev : domainProd;
     const zone = aws.route53.getZone({ name: domain }, { async: true });
     
     const newRecord = zone.then(information => {
