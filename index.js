@@ -132,14 +132,9 @@ availabilityZones.apply(async availabilityZone => {
         egress: [
             {
                 protocol: "tcp",
-                fromPort: 3306,
-                toPort: 3306,
-                cidrBlocks: [vpc.cidrBlock],
-            },
-            {
-                protocol: "tcp",
-                fromPort: applicationPort,
-                toPort: applicationPort,
+                fromPort: 0,
+                toPort: 0,
+                protocol: "-1",
                 cidrBlocks: ["0.0.0.0/0"],
             },
         ],
