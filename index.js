@@ -7,6 +7,7 @@ const aws = require("@pulumi/aws");
 require("dotenv").config()
 
 const config = new pulumi.Config();
+const awsProfile = config.require("profile");
 const vpcCidrBlock = config.require("vpcCidrBlock");
 
 const applicationPort = process.env.APPLICATIONPORT;
@@ -212,54 +213,49 @@ availabilityZones.apply(async availabilityZone => {
   dataSettings.apply((settings) => {
     const userData =
 `#!/bin/bash
-cat <<EOF | sudo tee /etc/systemd/system/webapp.service
-[Unit]
-Description=app.js-service file to start the server instance in ec2
-Documentation=https://fall2023.csye6225.cloud/
-Wants=network-online.target
-After=network-online.target
-[Service]
-Environment="DATABASE=${process.env.DATABASE}"
-Environment="HOST=${settings.HOST}"
-Environment="USER=${settings.USER}"
-Environment="PASS=${settings.PASS}"
-Environment="DIALECT=${process.env.DIALECT}"
-Type=simple
-User=admin
-WorkingDirectory=/home/admin/webapp/
-ExecStart=/usr/bin/node /home/admin/webapp/app.js
-Restart=on-failure
-[Install]
-WantedBy=multi-user.target
-EOF
-sudo systemctl daemon-reload
-sudo systemctl enable webapp.service
-sudo systemctl start webapp.service
-sudo systemctl status webapp.service
+sudo touch /home/webapp-user/.env
+sudo echo DATABASE=${process.env.DATABASE} >> /home/webapp-user/.env
+sudo echo HOST=${settings.HOST} >> /home/webapp-user/.env
+sudo echo USER=${settings.USER} >> /home/webapp-user/.env
+sudo echo PASS=${settings.PASS} >> /home/webapp-user/.env
+sudo echo DIALECT=${process.env.DIALECT} >> /home/webapp-user/.env
+sudo chown webapp-user:webapp-user /home/webapp-user/.env
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+    -a fetch-config \
+    -m ec2 \
+    -c file:/opt/aws/amazon-cloudwatch-agent/etc/cloudwatch-config.json \
+    -s
+
+sudo systemctl start amazon-cloudwatch-agent
+sudo systemctl enable amazon-cloudwatch-agent
 `;
-    const ec2Csye6225Role = new aws.iam.Role("EC2-CSYE6225", {
-          name: "EC2-CSYE6225",
-          assumeRolePolicy: {
-              Version: "2012-10-17",
-              Statement: [{
-                  Action: "sts:AssumeRole",
-                  Effect: "Allow",
-                  Principal: {
-                      Service: "ec2.amazonaws.com",
-                  },
-              }],
-          },
-    });    
-    const cloudwatchAgentPolicyAttachment = new aws.iam.RolePolicyAttachment("cloudwatch-agent-policy-attachment", {
-        policyArn: "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
-        role: ec2Csye6225Role.name,
-    });
-    const ec2InstanceProfile = new aws.iam.InstanceProfile("EC2-CSYE6225-InstanceProfile", {
-      name: "ec2_profile",
-      role: ec2Csye6225Role.name,
-    });
+    const ec2Role = new aws.iam.Role("EC2-ROLE", {
+        name: "EC2-ROLE",
+        assumeRolePolicy: {
+            Version: "2012-10-17",
+            Statement: [{
+                Action: "sts:AssumeRole",
+                Effect: "Allow",
+                Principal: {
+                    Service: "ec2.amazonaws.com",
+                },
+            }],
+        },
+    });
+
+    const cloudwatchpolicy = new aws.iam.RolePolicyAttachment("cloudwatch-agent-policy", {
+        policyArn: "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
+        role: ec2Role.name,
+    });
+
+    const ec2InstanceProfile = new aws.iam.InstanceProfile("EC2-InstanceProfile", {
+      name: "ec2_profile",
+      role: ec2Role.name,
+    });
+
     const ec2Instance = new aws.ec2.Instance("webapp-ec2-instance", {
         ami: latestAmiCreated,
+        iamInstanceProfile: ec2InstanceProfile,
         instanceType: instance,
         keyName: keyPair.keyName,
         vpcSecurityGroupIds: [applicationSecurityGroup.id],
@@ -281,19 +277,19 @@ sudo systemctl status webapp.service
         userData: userData
     });
 
-    const domainName = awsProfile === "dev" ? devDomain : prodDomain;
-    console.log(domainName);
-    const selectedZone = aws.route53.getZone({ name: domainName }, { async: true });
-    console.log(selectedZone);
-    const newRecord = selectedZone.then(zoneInfo => {
+    const domain = awsProfile === "dev" ? devDomain : prodDomain;
+    const zone = aws.route53.getZone({ name: domain }, { async: true });
+    
+    const newRecord = zone.then(information => {
       return new aws.route53.Record("new_record", {
-        zoneId: selectedZone.then(zone => zone.zoneId),
-        name: selectedZone.then(zone => zone.name),
+        zoneId: zone.then(z => z.zoneId),
+        name: zone.then(z => z.name),
         type: "A",
-        records: [webappServer.publicIp],
+        records: [ec2Instance.publicIp],
         ttl: 60,
       });
     });
+
     const webappLogGroup = new aws.cloudwatch.LogGroup("webapp_log_group", {
       name: "csye6225",
     });
