@@ -221,6 +221,12 @@ sudo echo HOST=${settings.HOST} >> /home/saitejsunkara/.env
 sudo echo USER=${settings.USER} >> /home/saitejsunkara/.env
 sudo echo PASS=${settings.PASS} >> /home/saitejsunkara/.env
 sudo echo DIALECT=${process.env.DIALECT} >> /home/saitejsunkara/.env
+sudo echo SMTP=${process.env.SMTP} >> /home/saitejsunkara/.env
+sudo echo SMTP_PORT=${process.env.SMTP_PORT} >> /home/saitejsunkara/.env
+sudo echo MAIL_IAM_USERNAME=${process.env.MAIL_IAM_USERNAME} >> /home/saitejsunkara/.env
+sudo echo SMTP_USERNAME=${process.env.SMTP_USERNAME} >> /home/saitejsunkara/.env
+sudo echo SMTP_PASSWORD=${process.env.SMTP_PASSWORD} >> /home/saitejsunkara/.env
+sudo echo EMAIL_TO_ADDRESS=${process.env.EMAIL_TO_ADDRESS} >> /home/saitejsunkara/.env
 sudo chown saitejsunkara:saitejsunkara /home/saitejsunkara/.env
 sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
     -a fetch-config \
