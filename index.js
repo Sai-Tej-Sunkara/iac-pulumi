@@ -376,14 +376,12 @@ sudo systemctl enable amazon-cloudwatch-agent
       const scaleUpPolicy = new aws.autoscaling.Policy("scale-up-policy", {
         scalingAdjustment: 1,
         adjustmentType: "ChangeInCapacity",
-        cooldown: 300,
-        autoScalingGroupName: asgName,
+        autoscalingGroupName: asgName,
       });
       const scaleDownPolicy = new aws.autoscaling.Policy("scale-down-policy", {
         scalingAdjustment: -1,
         adjustmentType: "ChangeInCapacity",
-        cooldown: 300,
-        autoScalingGroupName: asgName,
+        autoscalingGroupName: asgName,
       });
       const highCpuAlarm = new aws.cloudwatch.MetricAlarm("high-cpu-alarm", {
         metricName: "CPUUtilization",
