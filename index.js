@@ -446,49 +446,49 @@ sudo systemctl enable amazon-cloudwatch-agent
         albTargetGroupArn: targetGroup.arn,
       });
 
-      const ec2Instance = new aws.ec2.Instance("webapp-ec2-instance", {
-        ami: latestAmiCreated,
-        iamInstanceProfile: ec2InstanceProfile,
-        instanceType: instance,
-        keyName: keyPair.keyName,
-        vpcSecurityGroupIds: [applicationSecurityGroup.id],
-        subnetId: isPublicSubnet
-          ? publicSubnets[subnetNumber].id
-          : privateSubnets[subnetNumber].id,
-        associatePublicIpAddress: isAssociatePublicIpAddress,
-        rootBlockDevice: {
-          volumeSize: volumeSize,
-          volumeType: volumeType,
-          deleteOnTermination: isDeleteOnTermination,
-        },
-        creditSpecification: {
-          cpuCredits: "standard",
-        },
-        tags: {
-          Name: "WebApp EC2 Instance - Debain 12",
-        },
-        disableApiTermination: isDisableApiTermination,
-        instanceInitiatedShutdownBehavior: instanceInitiatedShutdownBehavior,
-        userData: userData,
-      });
+      //   const ec2Instance = new aws.ec2.Instance("webapp-ec2-instance", {
+      //     ami: latestAmiCreated,
+      //     iamInstanceProfile: ec2InstanceProfile,
+      //     instanceType: instance,
+      //     keyName: keyPair.keyName,
+      //     vpcSecurityGroupIds: [applicationSecurityGroup.id],
+      //     subnetId: isPublicSubnet
+      //       ? publicSubnets[subnetNumber].id
+      //       : privateSubnets[subnetNumber].id,
+      //     associatePublicIpAddress: isAssociatePublicIpAddress,
+      //     rootBlockDevice: {
+      //       volumeSize: volumeSize,
+      //       volumeType: volumeType,
+      //       deleteOnTermination: isDeleteOnTermination,
+      //     },
+      //     creditSpecification: {
+      //       cpuCredits: "standard",
+      //     },
+      //     tags: {
+      //       Name: "WebApp EC2 Instance - Debain 12",
+      //     },
+      //     disableApiTermination: isDisableApiTermination,
+      //     instanceInitiatedShutdownBehavior: instanceInitiatedShutdownBehavior,
+      //     userData: userData,
+      //   });
 
-      const ec2InstanceAttachment =
-        new aws.elasticloadbalancingv2.TargetGroupAttachment(
-          "ec2-tg-attachment",
-          {
-            targetGroupArn: targetGroup.arn,
-            targetId: ec2Instance.id,
-          }
-        );
+      //   const ec2InstanceAttachment =
+      //     new aws.elasticloadbalancingv2.TargetGroupAttachment(
+      //       "ec2-tg-attachment",
+      //       {
+      //         targetGroupArn: targetGroup.arn,
+      //         targetId: ec2Instance.id,
+      //       }
+      //     );
 
       const domain = awsProfile === "dev" ? domainDev : domainProd;
       const zone = aws.route53.getZone({ name: domain }, { async: true });
 
       const newRecord = zone.then((information) => {
         return new aws.route53.Record("new_record", {
-            zoneId: zone.then((z) => z.zoneId),
-            name: zone.then((z) => z.name),
-            type: "A",
+          zoneId: zone.then((z) => z.zoneId),
+          name: zone.then((z) => z.name),
+          type: "A",
           aliases: [
             {
               name: appLoadBalancer.dnsName,
