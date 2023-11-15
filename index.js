@@ -481,10 +481,10 @@ sudo systemctl enable amazon-cloudwatch-agent
         },
         alarmActions: [scaleDownPolicy.arn],
       });
-      const asgAttachment = new aws.autoscaling.Attachment("asg-attachment", {
-        autoscalingGroupName: asgName,
-        albTargetGroupArn: targetGroup.arn,
-      });
+      // const asgAttachment = new aws.autoscaling.Attachment("asg-attachment", {
+      //   autoscalingGroupName: asgName,
+      //   albTargetGroupArn: targetGroup.arn,
+      // });
 
       //   const ec2Instance = new aws.ec2.Instance("webapp-ec2-instance", {
       //     ami: latestAmiCreated,
