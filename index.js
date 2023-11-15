@@ -214,20 +214,20 @@ availabilityZones.apply(async (availabilityZone) => {
     },
   });
 
-    // applicationSecurityGroup.egress = [
-    //   {
-    //     protocol: "tcp",
-    //     fromPort: 3306,
-    //     toPort: 3306,
-    //     cidrBlocks: [vpc.cidrBlock],
-    //   },
-    //   {
-    //     protocol: "tcp",
-    //     fromPort: 3306,
-    //     toPort: 3306,
-    //     securityGroups: [dbSecurityGroup.id],
-    //   },
-    // ];
+  // applicationSecurityGroup.egress = [
+  //   {
+  //     protocol: "tcp",
+  //     fromPort: 3306,
+  //     toPort: 3306,
+  //     cidrBlocks: [vpc.cidrBlock],
+  //   },
+  //   {
+  //     protocol: "tcp",
+  //     fromPort: 3306,
+  //     toPort: 3306,
+  //     securityGroups: [dbSecurityGroup.id],
+  //   },
+  // ];
 
   const dbSubnetGroup = new aws.rds.SubnetGroup("db-subnet-group", {
     subnetIds: privateSubnets.map((subnet) => subnet.id),
@@ -352,74 +352,55 @@ sudo systemctl enable amazon-cloudwatch-agent
     // });
 
     const asgLaunchConfig = new aws.ec2.LaunchTemplate("asg-launch-config", {
-        name: "asg-launch-config",
-        imageId: latestAmiCreated,
-        instanceType: instance,
-        iamInstanceProfile: {
-                name: ec2InstanceProfile.name,
+      ami: latestAmiCreated,
+      iamInstanceProfile: ec2InstanceProfile,
+      instanceType: instance,
+      keyName: keyPair.keyName,
+      vpcSecurityGroupIds: [applicationSecurityGroup.id],
+      subnetId: isPublicSubnet
+        ? publicSubnets[subnetNumber].id
+        : privateSubnets[subnetNumber].id,
+      associatePublicIpAddress: isAssociatePublicIpAddress,
+      rootBlockDevice: {
+        volumeSize: volumeSize,
+        volumeType: volumeType,
+        deleteOnTermination: isDeleteOnTermination,
+      },
+      creditSpecification: {
+        cpuCredits: "standard",
+      },
+      tags: {
+        Name: "WebApp EC2 Instance - Debain 12",
+      },
+      disableApiTermination: isDisableApiTermination,
+      instanceInitiatedShutdownBehavior: instanceInitiatedShutdownBehavior,
+      userData: base64UserData,
+    });
+
+    const appLoadBalancer = new aws.lb.LoadBalancer("app-load-balancer", {
+      loadBalancerType: "application",
+      subnets: publicSubnets.map((subnet) => subnet.id),
+      securityGroups: [loadBalancerSecurityGroup.id],
+    });
+
+    const targetGroup = new aws.lb.TargetGroup("target-group", {
+      port: applicationPort,
+      protocol: "HTTP",
+      vpcId: vpc.id,
+      targetType: "instance",
+    });
+
+    const listener = new aws.lb.Listener("listener", {
+      loadBalancerArn: appLoadBalancer.arn,
+      protocol: "HTTP",
+      port: 80,
+      defaultActions: [
+        {
+          type: "forward",
+          targetGroupArn: targetGroup.arn,
         },
-        networkInterfaces: [
-            {
-              associatePublicIpAddress: isAssociatePublicIpAddress,
-              subnetId: publicSubnets[0].id,
-              securityGroups: [applicationSecurityGroup.id],
-            },
-          ],
-        keyName: keyPair.keyName,
-        ebsOptimized: "false",
-        disableApiTermination: isDisableApiTermination,
-        blockDeviceMappings: [
-          {
-            deviceName: "/dev/xvda",
-            ebs: {
-              volumeSize: volumeSize,
-              volumeType: volumeType,
-              deleteOnTermination: isDeleteOnTermination,
-              encrypted: "true",
-            },
-          },
-        ],
-        tagSpecifications: [
-          {
-            resourceType: "instance",
-            tags: {
-              name: "WebApp EC2 Instance - Debain 12",
-            },
-          },
-        ],
-        userData: base64UserData,
-      });
-
-    const appLoadBalancer = new aws.lb.LoadBalancer(
-        "app-load-balancer",
-        {
-          loadBalancerType: "application",
-          subnets: publicSubnets.map((subnet) => subnet.id),
-          securityGroups: [loadBalancerSecurityGroup.id],
-        }
-      );
-
-      const targetGroup = new aws.lb.TargetGroup(
-        "target-group",
-        {
-          port: applicationPort,
-          protocol: "HTTP",
-          vpcId: vpc.id,
-          targetType: "instance",
-        }
-      );
-
-      const listener = new aws.lb.Listener("listener", {
-        loadBalancerArn: appLoadBalancer.arn,
-        protocol: "HTTP",
-        port: 80,
-        defaultActions: [
-          {
-            type: "forward",
-            targetGroupArn: targetGroup.arn,
-          },
-        ],
-      });
+      ],
+    });
 
     const autoScalingGroup = new aws.autoscaling.Group(
       "webapp-autoscaling-group",
