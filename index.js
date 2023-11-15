@@ -214,20 +214,20 @@ availabilityZones.apply(async (availabilityZone) => {
     },
   });
 
-  //   applicationSecurityGroup.egress = [
-  //     {
-  //       protocol: "tcp",
-  //       fromPort: 3306,
-  //       toPort: 3306,
-  //       cidrBlocks: [vpc.cidrBlock],
-  //     },
-  //     {
-  //       protocol: "tcp",
-  //       fromPort: 3306,
-  //       toPort: 3306,
-  //       securityGroups: [dbSecurityGroup.id],
-  //     },
-  //   ];
+    // applicationSecurityGroup.egress = [
+    //   {
+    //     protocol: "tcp",
+    //     fromPort: 3306,
+    //     toPort: 3306,
+    //     cidrBlocks: [vpc.cidrBlock],
+    //   },
+    //   {
+    //     protocol: "tcp",
+    //     fromPort: 3306,
+    //     toPort: 3306,
+    //     securityGroups: [dbSecurityGroup.id],
+    //   },
+    // ];
 
   const dbSubnetGroup = new aws.rds.SubnetGroup("db-subnet-group", {
     subnetIds: privateSubnets.map((subnet) => subnet.id),
@@ -338,22 +338,93 @@ sudo systemctl enable amazon-cloudwatch-agent
 
     const base64UserData = Buffer.from(userData).toString("base64");
 
+    // const asgLaunchConfig = new aws.ec2.LaunchTemplate("asg-launch-config", {
+    //   imageId: latestAmiCreated,
+    //   instanceType: instance,
+    //   keyName: keyPair.keyName,
+    //   associatePublicIpAddress: isAssociatePublicIpAddress,
+    //   userData: base64UserData,
+    //   iamInstanceProfile: {
+    //     name: ec2InstanceProfile.name,
+    //   },
+    //   securityGroups: [applicationSecurityGroup.id],
+    //   subnetId: publicSubnets[0].id,
+    // });
+
     const asgLaunchConfig = new aws.ec2.LaunchTemplate("asg-launch-config", {
-      imageId: latestAmiCreated,
-      instanceType: instance,
-      keyName: keyPair.keyName,
-      associatePublicIpAddress: isAssociatePublicIpAddress,
-      userData: base64UserData,
-      iamInstanceProfile: {
-        name: ec2InstanceProfile.name,
-      },
-      securityGroups: [applicationSecurityGroup.id],
-      subnetId: publicSubnets[0].id,
-    });
+        name: "asg-launch-config",
+        imageId: latestAmiCreated,
+        instanceType: instance,
+        iamInstanceProfile: {
+                name: ec2InstanceProfile.name,
+        },
+        networkInterfaces: [
+            {
+              associatePublicIpAddress: isAssociatePublicIpAddress,
+              subnetId: publicSubnets[0].id,
+              securityGroups: [applicationSecurityGroup.id],
+            },
+          ],
+        keyName: keyPair.keyName,
+        ebsOptimized: "false",
+        disableApiTermination: isDisableApiTermination,
+        blockDeviceMappings: [
+          {
+            deviceName: "/dev/xvda",
+            ebs: {
+              volumeSize: volumeSize,
+              volumeType: volumeType,
+              deleteOnTermination: isDeleteOnTermination,
+              encrypted: "true",
+            },
+          },
+        ],
+        tagSpecifications: [
+          {
+            resourceType: "instance",
+            tags: {
+              name: "WebApp EC2 Instance - Debain 12",
+            },
+          },
+        ],
+        userData: base64UserData,
+      });
+
+    const appLoadBalancer = new aws.lb.LoadBalancer(
+        "app-load-balancer",
+        {
+          loadBalancerType: "application",
+          subnets: publicSubnets.map((subnet) => subnet.id),
+          securityGroups: [loadBalancerSecurityGroup.id],
+        }
+      );
+
+      const targetGroup = new aws.lb.TargetGroup(
+        "target-group",
+        {
+          port: applicationPort,
+          protocol: "HTTP",
+          vpcId: vpc.id,
+          targetType: "instance",
+        }
+      );
+
+      const listener = new aws.lb.Listener("listener", {
+        loadBalancerArn: appLoadBalancer.arn,
+        protocol: "HTTP",
+        port: 80,
+        defaultActions: [
+          {
+            type: "forward",
+            targetGroupArn: targetGroup.arn,
+          },
+        ],
+      });
 
     const autoScalingGroup = new aws.autoscaling.Group(
       "webapp-autoscaling-group",
       {
+        targetGroupArns: [targetGroup.arn],
         launchTemplate: {
           id: asgLaunchConfig.id,
           version: "$Latest",
@@ -410,37 +481,6 @@ sudo systemctl enable amazon-cloudwatch-agent
         },
         alarmActions: [scaleDownPolicy.arn],
       });
-      const appLoadBalancer = new aws.elasticloadbalancingv2.LoadBalancer(
-        "app-load-balancer",
-        {
-          loadBalancerType: "application",
-          subnets: publicSubnets.map((subnet) => subnet.id),
-          securityGroups: [loadBalancerSecurityGroup.id],
-        }
-      );
-
-      const targetGroup = new aws.elasticloadbalancingv2.TargetGroup(
-        "target-group",
-        {
-          port: applicationPort,
-          protocol: "HTTP",
-          vpcId: vpc.id,
-          targetType: "instance",
-        }
-      );
-
-      const listener = new aws.elasticloadbalancingv2.Listener("listener", {
-        loadBalancerArn: appLoadBalancer.arn,
-        protocol: "HTTP",
-        port: 80,
-        defaultActions: [
-          {
-            type: "forward",
-            targetGroupArn: targetGroup.arn,
-          },
-        ],
-      });
-
       const asgAttachment = new aws.autoscaling.Attachment("asg-attachment", {
         autoscalingGroupName: asgName,
         albTargetGroupArn: targetGroup.arn,
