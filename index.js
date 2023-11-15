@@ -352,8 +352,10 @@ sudo systemctl enable amazon-cloudwatch-agent
     // });
 
     const asgLaunchConfig = new aws.ec2.LaunchTemplate("asg-launch-config", {
-      ami: latestAmiCreated,
-      iamInstanceProfile: ec2InstanceProfile,
+      imageId: latestAmiCreated,
+      iamInstanceProfile: {
+            name: ec2InstanceProfile.name,
+          },
       instanceType: instance,
       keyName: keyPair.keyName,
       vpcSecurityGroupIds: [applicationSecurityGroup.id],
