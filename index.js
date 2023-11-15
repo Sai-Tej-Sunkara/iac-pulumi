@@ -214,20 +214,20 @@ availabilityZones.apply(async (availabilityZone) => {
     },
   });
 
-  applicationSecurityGroup.egress = [
-    {
-      protocol: "tcp",
-      fromPort: 3306,
-      toPort: 3306,
-      cidrBlocks: [vpc.cidrBlock],
-    },
-    {
-      protocol: "tcp",
-      fromPort: 3306,
-      toPort: 3306,
-      securityGroups: [dbSecurityGroup.id],
-    },
-  ];
+  //   applicationSecurityGroup.egress = [
+  //     {
+  //       protocol: "tcp",
+  //       fromPort: 3306,
+  //       toPort: 3306,
+  //       cidrBlocks: [vpc.cidrBlock],
+  //     },
+  //     {
+  //       protocol: "tcp",
+  //       fromPort: 3306,
+  //       toPort: 3306,
+  //       securityGroups: [dbSecurityGroup.id],
+  //     },
+  //   ];
 
   const dbSubnetGroup = new aws.rds.SubnetGroup("db-subnet-group", {
     subnetIds: privateSubnets.map((subnet) => subnet.id),
@@ -348,6 +348,7 @@ sudo systemctl enable amazon-cloudwatch-agent
         name: ec2InstanceProfile.name,
       },
       securityGroups: [applicationSecurityGroup.id],
+      subnetId: publicSubnets[0].id,
     });
 
     const autoScalingGroup = new aws.autoscaling.Group(
@@ -372,7 +373,7 @@ sudo systemctl enable amazon-cloudwatch-agent
       }
     );
 
-    autoScalingGroup.name.apply(asgName => {
+    autoScalingGroup.name.apply((asgName) => {
       const scaleUpPolicy = new aws.autoscaling.Policy("scale-up-policy", {
         scalingAdjustment: 1,
         adjustmentType: "ChangeInCapacity",
@@ -485,11 +486,16 @@ sudo systemctl enable amazon-cloudwatch-agent
 
       const newRecord = zone.then((information) => {
         return new aws.route53.Record("new_record", {
-          zoneId: zone.then((z) => z.zoneId),
-          name: zone.then((z) => z.name),
-          type: "A",
-          records: [ec2Instance.publicIp],
-          ttl: 60,
+            zoneId: zone.then((z) => z.zoneId),
+            name: zone.then((z) => z.name),
+            type: "A",
+          aliases: [
+            {
+              name: appLoadBalancer.dnsName,
+              zoneId: appLoadBalancer.zoneId,
+              evaluateTargetHealth: true,
+            },
+          ],
         });
       });
 
