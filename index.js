@@ -282,9 +282,17 @@ availabilityZones.apply(async (availabilityZone) => {
       };
     });
 
-  dataSettings.apply((settings) => {
-    const userData = `#!/bin/bash
+  const snsTopic = new aws.sns.Topic("mySNSTopic", {
+    displayName: "My SNS Topic",
+  });
+
+  const snsTopicArn = snsTopic.arn.apply((arn) => arn);
+
+  snsTopicArn.apply((topicArn) => {
+    dataSettings.apply((settings) => {
+      const userData = `#!/bin/bash
 sudo touch /home/saitejsunkara/.env
+sudo touch /home/saitejsunkara/assignments/.env
 sudo echo DATABASE=${process.env.DATABASE} >> /home/saitejsunkara/.env
 sudo echo HOST=${settings.HOST} >> /home/saitejsunkara/.env
 sudo echo USER=${settings.USER} >> /home/saitejsunkara/.env
@@ -296,6 +304,10 @@ sudo echo MAIL_IAM_USERNAME=${process.env.MAIL_IAM_USERNAME} >> /home/saitejsunk
 sudo echo SMTP_USERNAME=${process.env.SMTP_USERNAME} >> /home/saitejsunkara/.env
 sudo echo SMTP_PASSWORD=${process.env.SMTP_PASSWORD} >> /home/saitejsunkara/.env
 sudo echo EMAIL_TO_ADDRESS=${process.env.EMAIL_TO_ADDRESS} >> /home/saitejsunkara/.env
+sudo echo TOPIC_ARN=${topicArn} >> /home/saitejsunkara/.env
+sudo echo TOPIC_ARN=${topicArn} >> /home/saitejsunkara/assignments/.env
+sudo echo AWS_REGION_CHECK=${process.env.AWS_REGION_CHECK} >> /home/saitejsunkara/.env
+sudo echo AWS_REGION_CHECK=${process.env.AWS_REGION_CHECK} >> /home/saitejsunkara/assignments/.env
 sudo chown saitejsunkara:saitejsunkara /home/saitejsunkara/.env
 sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
     -a fetch-config \
@@ -306,360 +318,387 @@ sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
 sudo systemctl start amazon-cloudwatch-agent
 sudo systemctl enable amazon-cloudwatch-agent
 `;
-    const ec2Role = new aws.iam.Role("EC2-ROLE", {
-      name: "EC2-ROLE",
-      assumeRolePolicy: {
-        Version: "2012-10-17",
-        Statement: [
-          {
-            Action: "sts:AssumeRole",
-            Effect: "Allow",
-            Principal: {
-              Service: "ec2.amazonaws.com",
-            },
-          },
-        ],
-      },
-    });
-
-    const cloudwatchpolicy = new aws.iam.RolePolicyAttachment(
-      "cloudwatch-agent-policy",
-      {
-        policyArn: "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
-        role: ec2Role.name,
-      }
-    );
-
-    const ec2InstanceProfile = new aws.iam.InstanceProfile(
-      "EC2-InstanceProfile",
-      {
-        name: "ec2_profile",
-        role: ec2Role.name,
-      }
-    );
-
-    const base64UserData = Buffer.from(userData).toString("base64");
-
-    // const asgLaunchConfig = new aws.ec2.LaunchTemplate("asg-launch-config", {
-    //   imageId: latestAmiCreated,
-    //   instanceType: instance,
-    //   keyName: keyPair.keyName,
-    //   associatePublicIpAddress: isAssociatePublicIpAddress,
-    //   userData: base64UserData,
-    //   iamInstanceProfile: {
-    //     name: ec2InstanceProfile.name,
-    //   },
-    //   securityGroups: [applicationSecurityGroup.id],
-    //   subnetId: publicSubnets[0].id,
-    // });
-
-    const asgLaunchConfig = new aws.ec2.LaunchTemplate("asg-launch-config", {
-      imageId: latestAmiCreated,
-      iamInstanceProfile: {
-        name: ec2InstanceProfile.name,
-      },
-      instanceType: instance,
-      keyName: keyPair.keyName,
-      vpcSecurityGroupIds: [applicationSecurityGroup.id],
-      subnetId: isPublicSubnet
-        ? publicSubnets[subnetNumber].id
-        : privateSubnets[subnetNumber].id,
-      associatePublicIpAddress: isAssociatePublicIpAddress,
-      rootBlockDevice: {
-        volumeSize: volumeSize,
-        volumeType: volumeType,
-        deleteOnTermination: isDeleteOnTermination,
-      },
-      creditSpecification: {
-        cpuCredits: "standard",
-      },
-      tags: {
-        Name: "WebApp EC2 Instance - Debain 12",
-      },
-      disableApiTermination: isDisableApiTermination,
-      instanceInitiatedShutdownBehavior: instanceInitiatedShutdownBehavior,
-      userData: base64UserData,
-    });
-
-    const appLoadBalancer = new aws.lb.LoadBalancer("app-load-balancer", {
-      loadBalancerType: "application",
-      subnets: publicSubnets.map((subnet) => subnet.id),
-      securityGroups: [loadBalancerSecurityGroup.id],
-    });
-
-    const targetGroup = new aws.lb.TargetGroup("target-group", {
-      port: applicationPort,
-      protocol: "HTTP",
-      vpcId: vpc.id,
-      targetType: "instance",
-    });
-
-    const listener = new aws.lb.Listener("listener", {
-      loadBalancerArn: appLoadBalancer.arn,
-      protocol: "HTTP",
-      port: 80,
-      defaultActions: [
-        {
-          type: "forward",
-          targetGroupArn: targetGroup.arn,
-        },
-      ],
-    });
-
-    const autoScalingGroup = new aws.autoscaling.Group(
-      "webapp-autoscaling-group",
-      {
-        targetGroupArns: [targetGroup.arn],
-        launchTemplate: {
-          id: asgLaunchConfig.id,
-          version: "$Latest",
-        },
-        desiredCapacity: desiredCapacity,
-        minSize: minimumCapacitySize,
-        maxSize: maximumCapacitySize,
-        cooldown: autoScalingCoolDown,
-        vpcZoneIdentifiers: publicSubnets.map((subnet) => subnet.id),
-        tags: [
-          {
-            key: "Name",
-            value: "webapp-autoscaling-instance",
-            propagateAtLaunch: true,
-          },
-        ],
-      }
-    );
-
-    autoScalingGroup.name.apply((asgName) => {
-      const scaleUpPolicy = new aws.autoscaling.Policy("scale-up-policy", {
-        scalingAdjustment: 1,
-        adjustmentType: "ChangeInCapacity",
-        autoscalingGroupName: asgName,
-      });
-      const scaleDownPolicy = new aws.autoscaling.Policy("scale-down-policy", {
-        scalingAdjustment: -1,
-        adjustmentType: "ChangeInCapacity",
-        autoscalingGroupName: asgName,
-      });
-      const highCpuAlarm = new aws.cloudwatch.MetricAlarm("high-cpu-alarm", {
-        metricName: "CPUUtilization",
-        namespace: "AWS/EC2",
-        statistic: "Average",
-        period: 60,
-        evaluationPeriods: evaluationPeriods,
-        threshold: upperThreshold,
-        comparisonOperator: "GreaterThanThreshold",
-        dimensions: {
-          AutoScalingGroupName: asgName,
-        },
-        alarmActions: [scaleUpPolicy.arn],
-      });
-      const lowCpuAlarm = new aws.cloudwatch.MetricAlarm("low-cpu-alarm", {
-        metricName: "CPUUtilization",
-        namespace: "AWS/EC2",
-        statistic: "Average",
-        period: 60,
-        evaluationPeriods: evaluationPeriods,
-        threshold: lowerThreshold,
-        comparisonOperator: "LessThanThreshold",
-        dimensions: {
-          AutoScalingGroupName: asgName,
-        },
-        alarmActions: [scaleDownPolicy.arn],
-      });
-      // const asgAttachment = new aws.autoscaling.Attachment("asg-attachment", {
-      //   autoscalingGroupName: asgName,
-      //   albTargetGroupArn: targetGroup.arn,
-      // });
-
-      //   const ec2Instance = new aws.ec2.Instance("webapp-ec2-instance", {
-      //     ami: latestAmiCreated,
-      //     iamInstanceProfile: ec2InstanceProfile,
-      //     instanceType: instance,
-      //     keyName: keyPair.keyName,
-      //     vpcSecurityGroupIds: [applicationSecurityGroup.id],
-      //     subnetId: isPublicSubnet
-      //       ? publicSubnets[subnetNumber].id
-      //       : privateSubnets[subnetNumber].id,
-      //     associatePublicIpAddress: isAssociatePublicIpAddress,
-      //     rootBlockDevice: {
-      //       volumeSize: volumeSize,
-      //       volumeType: volumeType,
-      //       deleteOnTermination: isDeleteOnTermination,
-      //     },
-      //     creditSpecification: {
-      //       cpuCredits: "standard",
-      //     },
-      //     tags: {
-      //       Name: "WebApp EC2 Instance - Debain 12",
-      //     },
-      //     disableApiTermination: isDisableApiTermination,
-      //     instanceInitiatedShutdownBehavior: instanceInitiatedShutdownBehavior,
-      //     userData: userData,
-      //   });
-
-      //   const ec2InstanceAttachment =
-      //     new aws.elasticloadbalancingv2.TargetGroupAttachment(
-      //       "ec2-tg-attachment",
-      //       {
-      //         targetGroupArn: targetGroup.arn,
-      //         targetId: ec2Instance.id,
-      //       }
-      //     );
-
-      const domain = awsProfile === "dev" ? domainDev : domainProd;
-      const zone = aws.route53.getZone({ name: domain }, { async: true });
-
-      const newRecord = zone.then((information) => {
-        return new aws.route53.Record("new_record", {
-          zoneId: zone.then((z) => z.zoneId),
-          name: zone.then((z) => z.name),
-          type: "A",
-          aliases: [
-            {
-              name: appLoadBalancer.dnsName,
-              zoneId: appLoadBalancer.zoneId,
-              evaluateTargetHealth: true,
-            },
-          ],
-        });
-      });
-
-      const webappLogGroup = new aws.cloudwatch.LogGroup("webapp_log_group", {
-        name: "csye6225",
-      });
-
-      const snsTopic = new aws.sns.Topic("mySNSTopic", {
-        displayName: "My SNS Topic",
-      });
-
-      const snsPublishRole = new aws.iam.Role("snsPublishRole", {
-        assumeRolePolicy: JSON.stringify({
+      const ec2Role = new aws.iam.Role("EC2-ROLE", {
+        name: "EC2-ROLE",
+        assumeRolePolicy: {
           Version: "2012-10-17",
           Statement: [
             {
               Action: "sts:AssumeRole",
               Effect: "Allow",
               Principal: {
-                Service: "sns.amazonaws.com",
+                Service: "ec2.amazonaws.com",
               },
             },
           ],
-        }),
+        },
       });
 
-      const snsPublishPolicy = new aws.iam.Policy("snsPublishPolicy", {
-        policy: pulumi.all([snsTopic.arn]).apply(([topicArn]) =>
-          JSON.stringify({
-            Version: "2012-10-17",
-            Statement: [
-              {
-                Action: ["sns:ListTopics", "sns:Publish", "sns:Subscribe"],
-                Effect: "Allow",
-                Resource: topicArn,
-              },
-            ],
-          })
-        ),
-      });
-
-      new aws.iam.RolePolicyAttachment("snsPublishRolePolicyAttachment", {
-        role: snsPublishRole,
-        policyArn: snsPublishPolicy.arn,
-      });
-
-      const bucket = new gcp.storage.Bucket("my-bucket", {
-        location: "US",
-        uniformBucketLevelAccess: true,
-      });
-
-      const serviceAccount = new gcp.serviceaccount.Account("myServiceAccount", {
-        accountId: process.env.GOOGLE_ACCOUNT_ID,
-        displayName: "My Service Account",
-      });
-
-      const serviceAccountKey = new gcp.serviceaccount.Key("myServiceAccountKey", {
-        serviceAccountId: serviceAccount.name,
-      });
-
-      const gcpBucketIAMBinding = new gcp.storage.BucketIAMMember(
-        "bucketIAMMember",
+      const cloudwatchpolicy = new aws.iam.RolePolicyAttachment(
+        "cloudwatch-agent-policy",
         {
-          bucket: bucket.id,
-          role: "roles/storage.objectCreator",
-          member: pulumi.interpolate`serviceAccount:${serviceAccount.email}`,
+          policyArn: "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
+          role: ec2Role.name,
         }
       );
 
-      const emailTable = new aws.dynamodb.Table("emailTable", {
-        attributes: [{ name: "id", type: "S" }],
-        hashKey: "id",
-        billingMode: "PAY_PER_REQUEST",
-      });
+      const ec2InstanceProfile = new aws.iam.InstanceProfile(
+        "EC2-InstanceProfile",
+        {
+          name: "ec2_profile",
+          role: ec2Role.name,
+        }
+      );
 
-      const lambdaRole = new aws.iam.Role("lambdaRole", {
-        assumeRolePolicy: JSON.stringify({
-          Version: "2012-10-17",
-          Statement: [
-            {
-              Action: "sts:AssumeRole",
-              Principal: {
-                Service: "lambda.amazonaws.com",
-              },
-              Effect: "Allow",
-            },
-          ],
-        }),
-      });
+      const base64UserData = Buffer.from(userData).toString("base64");
 
-      const lambdaPolicy = new aws.iam.Policy("lambdaPolicy", {
-        policy: JSON.stringify({
-          Version: "2012-10-17",
-          Statement: [
-            {
-              Action: ["dynamodb:", "logs:", "cloudwatch:*"],
-              Effect: "Allow",
-              Resource: "*",
-            },
-          ],
-        }),
-      });
+      // const asgLaunchConfig = new aws.ec2.LaunchTemplate("asg-launch-config", {
+      //   imageId: latestAmiCreated,
+      //   instanceType: instance,
+      //   keyName: keyPair.keyName,
+      //   associatePublicIpAddress: isAssociatePublicIpAddress,
+      //   userData: base64UserData,
+      //   iamInstanceProfile: {
+      //     name: ec2InstanceProfile.name,
+      //   },
+      //   securityGroups: [applicationSecurityGroup.id],
+      //   subnetId: publicSubnets[0].id,
+      // });
 
-      const lambdaFunction = new aws.lambda.Function("myLambdaFunction", {
-        code: new pulumi.asset.FileArchive(
-          "/Users/saitejsunkara/Desktop/CloudComputing/serverless/serverless.zip"
-        ),
-        handler: "index.handler",
-        role: lambdaRole.arn,
-        runtime: "nodejs18.x",
-        environment: {
-          variables: {
-            SNS_TOPIC_ARN: snsTopic.arn,
-            DYNAMODB_TABLE_NAME: emailTable.name,
-            GCS_BUCKET_NAME: bucket.name,
-            GCS_SERVICE_ACCOUNT_KEY: serviceAccountKey.privateKey,
-            SES_ACCESS_KEY_ID:process.env.SMTP_USERNAME,
-            SES_SECRET_ACCESS_KEY:process.env.SMTP_PASSWORD,
-            GOOGLE_CLIENT_MAIL: process.env.GOOGLE_CLIENT_MAIL,
-            GOOGLE_PROJECT_ID: process.env.GOOGLE_ACCOUNT_ID,
-            SMTP: process.env.SMTP,
-            SMTP_PORT: process.env.SMTP_PORT,
-            SMTP_USERNAME: process.env.SMTP_USERNAME,
-            SMTP_PASSWORD: process.env.SMTP_PASSWORD
-          },
+      const asgLaunchConfig = new aws.ec2.LaunchTemplate("asg-launch-config", {
+        imageId: latestAmiCreated,
+        iamInstanceProfile: {
+          name: ec2InstanceProfile.name,
         },
+        instanceType: instance,
+        keyName: keyPair.keyName,
+        vpcSecurityGroupIds: [applicationSecurityGroup.id],
+        subnetId: isPublicSubnet
+          ? publicSubnets[subnetNumber].id
+          : privateSubnets[subnetNumber].id,
+        associatePublicIpAddress: isAssociatePublicIpAddress,
+        rootBlockDevice: {
+          volumeSize: volumeSize,
+          volumeType: volumeType,
+          deleteOnTermination: isDeleteOnTermination,
+        },
+        creditSpecification: {
+          cpuCredits: "standard",
+        },
+        tags: {
+          Name: "WebApp EC2 Instance - Debain 12",
+        },
+        disableApiTermination: isDisableApiTermination,
+        instanceInitiatedShutdownBehavior: instanceInitiatedShutdownBehavior,
+        userData: base64UserData,
       });
 
-      const snsInvokeLambda = new aws.lambda.Permission("snsInvokeLambda", {
-        action: "lambda:InvokeFunction",
-        function: lambdaFunction,
-        principal: "sns.amazonaws.com",
-        sourceArn: snsTopic.arn,
+      const appLoadBalancer = new aws.lb.LoadBalancer("app-load-balancer", {
+        loadBalancerType: "application",
+        subnets: publicSubnets.map((subnet) => subnet.id),
+        securityGroups: [loadBalancerSecurityGroup.id],
       });
 
-      const lambdaTrigger = new aws.sns.TopicSubscription("lambdaTrigger", {
-        endpoint: lambdaFunction.arn.apply((arn) => arn),
-        protocol: "lambda",
-        topic: snsTopic.arn,
+      const targetGroup = new aws.lb.TargetGroup("target-group", {
+        port: applicationPort,
+        protocol: "HTTP",
+        vpcId: vpc.id,
+        targetType: "instance",
+      });
+
+      const listener = new aws.lb.Listener("listener", {
+        loadBalancerArn: appLoadBalancer.arn,
+        protocol: "HTTP",
+        port: 80,
+        defaultActions: [
+          {
+            type: "forward",
+            targetGroupArn: targetGroup.arn,
+          },
+        ],
+      });
+
+      const autoScalingGroup = new aws.autoscaling.Group(
+        "webapp-autoscaling-group",
+        {
+          targetGroupArns: [targetGroup.arn],
+          launchTemplate: {
+            id: asgLaunchConfig.id,
+            version: "$Latest",
+          },
+          desiredCapacity: desiredCapacity,
+          minSize: minimumCapacitySize,
+          maxSize: maximumCapacitySize,
+          cooldown: autoScalingCoolDown,
+          vpcZoneIdentifiers: publicSubnets.map((subnet) => subnet.id),
+          tags: [
+            {
+              key: "Name",
+              value: "webapp-autoscaling-instance",
+              propagateAtLaunch: true,
+            },
+          ],
+        }
+      );
+
+      autoScalingGroup.name.apply((asgName) => {
+        const scaleUpPolicy = new aws.autoscaling.Policy("scale-up-policy", {
+          scalingAdjustment: 1,
+          adjustmentType: "ChangeInCapacity",
+          autoscalingGroupName: asgName,
+        });
+        const scaleDownPolicy = new aws.autoscaling.Policy(
+          "scale-down-policy",
+          {
+            scalingAdjustment: -1,
+            adjustmentType: "ChangeInCapacity",
+            autoscalingGroupName: asgName,
+          }
+        );
+        const highCpuAlarm = new aws.cloudwatch.MetricAlarm("high-cpu-alarm", {
+          metricName: "CPUUtilization",
+          namespace: "AWS/EC2",
+          statistic: "Average",
+          period: 60,
+          evaluationPeriods: evaluationPeriods,
+          threshold: upperThreshold,
+          comparisonOperator: "GreaterThanThreshold",
+          dimensions: {
+            AutoScalingGroupName: asgName,
+          },
+          alarmActions: [scaleUpPolicy.arn],
+        });
+        const lowCpuAlarm = new aws.cloudwatch.MetricAlarm("low-cpu-alarm", {
+          metricName: "CPUUtilization",
+          namespace: "AWS/EC2",
+          statistic: "Average",
+          period: 60,
+          evaluationPeriods: evaluationPeriods,
+          threshold: lowerThreshold,
+          comparisonOperator: "LessThanThreshold",
+          dimensions: {
+            AutoScalingGroupName: asgName,
+          },
+          alarmActions: [scaleDownPolicy.arn],
+        });
+        // const asgAttachment = new aws.autoscaling.Attachment("asg-attachment", {
+        //   autoscalingGroupName: asgName,
+        //   albTargetGroupArn: targetGroup.arn,
+        // });
+
+        //   const ec2Instance = new aws.ec2.Instance("webapp-ec2-instance", {
+        //     ami: latestAmiCreated,
+        //     iamInstanceProfile: ec2InstanceProfile,
+        //     instanceType: instance,
+        //     keyName: keyPair.keyName,
+        //     vpcSecurityGroupIds: [applicationSecurityGroup.id],
+        //     subnetId: isPublicSubnet
+        //       ? publicSubnets[subnetNumber].id
+        //       : privateSubnets[subnetNumber].id,
+        //     associatePublicIpAddress: isAssociatePublicIpAddress,
+        //     rootBlockDevice: {
+        //       volumeSize: volumeSize,
+        //       volumeType: volumeType,
+        //       deleteOnTermination: isDeleteOnTermination,
+        //     },
+        //     creditSpecification: {
+        //       cpuCredits: "standard",
+        //     },
+        //     tags: {
+        //       Name: "WebApp EC2 Instance - Debain 12",
+        //     },
+        //     disableApiTermination: isDisableApiTermination,
+        //     instanceInitiatedShutdownBehavior: instanceInitiatedShutdownBehavior,
+        //     userData: userData,
+        //   });
+
+        //   const ec2InstanceAttachment =
+        //     new aws.elasticloadbalancingv2.TargetGroupAttachment(
+        //       "ec2-tg-attachment",
+        //       {
+        //         targetGroupArn: targetGroup.arn,
+        //         targetId: ec2Instance.id,
+        //       }
+        //     );
+
+        const domain = awsProfile === "dev" ? domainDev : domainProd;
+        const zone = aws.route53.getZone({ name: domain }, { async: true });
+
+        const newRecord = zone.then((information) => {
+          return new aws.route53.Record("new_record", {
+            zoneId: zone.then((z) => z.zoneId),
+            name: zone.then((z) => z.name),
+            type: "A",
+            aliases: [
+              {
+                name: appLoadBalancer.dnsName,
+                zoneId: appLoadBalancer.zoneId,
+                evaluateTargetHealth: true,
+              },
+            ],
+          });
+        });
+
+        const webappLogGroup = new aws.cloudwatch.LogGroup("webapp_log_group", {
+          name: "csye6225",
+        });
+
+        const snsPublishRole = new aws.iam.Role("snsPublishRole", {
+          assumeRolePolicy: JSON.stringify({
+            Version: "2012-10-17",
+            Statement: [
+              {
+                Action: "sts:AssumeRole",
+                Effect: "Allow",
+                Principal: {
+                  Service: "sns.amazonaws.com",
+                },
+              },
+            ],
+          }),
+        });
+
+        const snsPublishPolicy = new aws.iam.Policy("snsPublishPolicy", {
+          policy: pulumi.all([topicArn]).apply(([tArn]) =>
+            JSON.stringify({
+              Version: "2012-10-17",
+              Statement: [
+                {
+                  Action: ["sns:ListTopics", "sns:Publish", "sns:Subscribe"],
+                  Effect: "Allow",
+                  Resource: tArn,
+                },
+              ],
+            })
+          ),
+        });
+
+        new aws.iam.RolePolicyAttachment("snsPublishRolePolicyAttachment", {
+          role: snsPublishRole,
+          policyArn: snsPublishPolicy.arn,
+        });
+
+        const bucket = new gcp.storage.Bucket("my-bucket", {
+          location: "US",
+          uniformBucketLevelAccess: true,
+          forceDestroy: true,
+        });
+
+        const serviceAccount = new gcp.serviceaccount.Account(
+          "myServiceAccount",
+          {
+            accountId: process.env.GOOGLE_ACCOUNT_ID,
+            displayName: "My Service Account",
+          }
+        );
+
+        const serviceAccountKey = new gcp.serviceaccount.Key(
+          "myServiceAccountKey",
+          {
+            serviceAccountId: serviceAccount.name,
+          }
+        );
+
+        const gcpBucketIAMBinding = new gcp.storage.BucketIAMMember(
+          "bucketIAMMember",
+          {
+            bucket: bucket.id,
+            role: "roles/storage.objectCreator",
+            member: pulumi.interpolate`serviceAccount:${serviceAccount.email}`,
+          }
+        );
+
+        const emailTable = new aws.dynamodb.Table("emailTable", {
+          attributes: [{ name: "id", type: "S" }],
+          hashKey: "id",
+          billingMode: "PAY_PER_REQUEST",
+        });
+
+        const lambdaRole = new aws.iam.Role("lambdaRole", {
+          assumeRolePolicy: JSON.stringify({
+            Version: "2012-10-17",
+            Statement: [
+              {
+                Action: "sts:AssumeRole",
+                Principal: {
+                  Service: "lambda.amazonaws.com",
+                },
+                Effect: "Allow",
+              },
+            ],
+          }),
+        });
+
+        const lambdaPolicy = new aws.iam.Policy("lambdaPolicy", {
+          policy: JSON.stringify({
+            Version: "2012-10-17",
+            Statement: [
+              {
+                Action: [
+                  "dynamodb:PutItem",
+                  "logs:CreateLogGroup",
+                  "logs:CreateLogStream",
+                  "logs:PutLogEvents",
+                  "logs:DescribeLogStreams",
+                  "cloudwatch:PutMetricData",
+                  "cloudwatch:GetMetricStatistics",
+                  "cloudwatch:ListMetrics",
+                  "cloudwatch:DescribeAlarms",
+                  "cloudwatch:PutMetricAlarm",
+                  "cloudwatch:GetMetricWidgetImage",
+                  "cloudwatch:GetMetricData",
+                  "cloudwatch:SetAlarmState",
+                ],
+                Effect: "Allow",
+                Resource: "*",
+              },
+            ],
+          }),
+        });
+
+        new aws.iam.RolePolicyAttachment("lambdaPolicyAttachment", {
+          role: lambdaRole.name,
+          policyArn: lambdaPolicy.arn,
+        });
+
+        const lambdaFunction = new aws.lambda.Function("myLambdaFunction", {
+          code: new pulumi.asset.FileArchive(
+            "/Users/saitejsunkara/Desktop/CloudComputing/serverless/serverless.zip"
+          ),
+          handler: "index.handler",
+          role: lambdaRole.arn,
+          runtime: "nodejs18.x",
+          environment: {
+            variables: {
+              SNS_TOPIC_ARN: topicArn,
+              DYNAMODB_TABLE_NAME: emailTable.name,
+              GCS_BUCKET_NAME: bucket.name,
+              GCS_SERVICE_ACCOUNT_KEY: serviceAccountKey.privateKey,
+              SES_ACCESS_KEY_ID: process.env.SMTP_USERNAME,
+              SES_SECRET_ACCESS_KEY: process.env.SMTP_PASSWORD,
+              GOOGLE_CLIENT_MAIL: process.env.GOOGLE_CLIENT_MAIL,
+              GOOGLE_PROJECT_ID: process.env.GOOGLE_ACCOUNT_ID,
+              SMTP: process.env.SMTP,
+              SMTP_PORT: process.env.SMTP_PORT,
+              SMTP_USERNAME: process.env.SMTP_USERNAME,
+              SMTP_PASSWORD: process.env.SMTP_PASSWORD,
+              AWS_REGION_CHECK: process.env.AWS_REGION_CHECK,
+            },
+          },
+        });
+
+        const snsInvokeLambda = new aws.lambda.Permission("snsInvokeLambda", {
+          action: "lambda:InvokeFunction",
+          function: lambdaFunction,
+          principal: "sns.amazonaws.com",
+          sourceArn: topicArn,
+        });
+
+        const lambdaTrigger = new aws.sns.TopicSubscription("lambdaTrigger", {
+          endpoint: lambdaFunction.arn.apply((arn) => arn),
+          protocol: "lambda",
+          topic: topicArn,
+        });
       });
     });
   });
