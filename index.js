@@ -559,22 +559,20 @@ sudo systemctl enable amazon-cloudwatch-agent
         });
 
         const snsPublishPolicy = new aws.iam.Policy("snsPublishPolicy", {
-          policy: pulumi.all([topicArn]).apply(([tArn]) =>
-            JSON.stringify({
-              Version: "2012-10-17",
-              Statement: [
-                {
-                  Action: ["sns:ListTopics", "sns:Publish", "sns:Subscribe"],
-                  Effect: "Allow",
-                  Resource: tArn,
-                },
-              ],
-            })
-          ),
+          policy: pulumi.interpolate`{
+           "Version": "2012-10-17",
+           "Statement": [
+             {
+               "Effect": "Allow",
+               "Action": "sns:Publish",
+               "Resource": "${topicArn}"
+             }
+           ]
+         }`,
         });
 
         new aws.iam.RolePolicyAttachment("snsPublishRolePolicyAttachment", {
-          role: snsPublishRole,
+          role: ec2Role.name,
           policyArn: snsPublishPolicy.arn,
         });
 
