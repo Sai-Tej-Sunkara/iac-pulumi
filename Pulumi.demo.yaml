@@ -1,6 +1,11 @@
+# @format
+
 config:
   aws:profile: demo
   aws:region: us-east-1
+  gcp:project: shining-energy-406521
+  iac-webapp:domainDev: dev.assignmentsai.com
+  iac-webapp:domainProd: demo.assignmentsai.com
   iac-webapp:profile: demo
   iac-webapp:pubKey: "/.ssh/key_pair.pub"
   iac-webapp:vpcCidrBlock: 10.1.63.0/24

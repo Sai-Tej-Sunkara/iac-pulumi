@@ -6,6 +6,8 @@ const os = require("os");
 const fs = require("fs");
 const pulumi = require("@pulumi/pulumi");
 const aws = require("@pulumi/aws");
+const gcp = require("@pulumi/gcp");
+const random = require("@pulumi/random");
 require("dotenv").config();
 
 const config = new pulumi.Config();
@@ -354,8 +356,8 @@ sudo systemctl enable amazon-cloudwatch-agent
     const asgLaunchConfig = new aws.ec2.LaunchTemplate("asg-launch-config", {
       imageId: latestAmiCreated,
       iamInstanceProfile: {
-            name: ec2InstanceProfile.name,
-          },
+        name: ec2InstanceProfile.name,
+      },
       instanceType: instance,
       keyName: keyPair.keyName,
       vpcSecurityGroupIds: [applicationSecurityGroup.id],
@@ -524,6 +526,140 @@ sudo systemctl enable amazon-cloudwatch-agent
 
       const webappLogGroup = new aws.cloudwatch.LogGroup("webapp_log_group", {
         name: "csye6225",
+      });
+
+      const snsTopic = new aws.sns.Topic("mySNSTopic", {
+        displayName: "My SNS Topic",
+      });
+
+      const snsPublishRole = new aws.iam.Role("snsPublishRole", {
+        assumeRolePolicy: JSON.stringify({
+          Version: "2012-10-17",
+          Statement: [
+            {
+              Action: "sts:AssumeRole",
+              Effect: "Allow",
+              Principal: {
+                Service: "sns.amazonaws.com",
+              },
+            },
+          ],
+        }),
+      });
+
+      const snsPublishPolicy = new aws.iam.Policy("snsPublishPolicy", {
+        policy: pulumi.all([snsTopic.arn]).apply(([topicArn]) =>
+          JSON.stringify({
+            Version: "2012-10-17",
+            Statement: [
+              {
+                Action: ["sns:ListTopics", "sns:Publish", "sns:Subscribe"],
+                Effect: "Allow",
+                Resource: topicArn,
+              },
+            ],
+          })
+        ),
+      });
+
+      new aws.iam.RolePolicyAttachment("snsPublishRolePolicyAttachment", {
+        role: snsPublishRole,
+        policyArn: snsPublishPolicy.arn,
+      });
+
+      const bucket = new gcp.storage.Bucket("my-bucket", {
+        location: "US",
+        uniformBucketLevelAccess: true,
+      });
+
+      const serviceAccount = new gcp.serviceaccount.Account("myServiceAccount", {
+        accountId: process.env.GOOGLE_ACCOUNT_ID,
+        displayName: "My Service Account",
+      });
+
+      const serviceAccountKey = new gcp.serviceaccount.Key("myServiceAccountKey", {
+        serviceAccountId: serviceAccount.name,
+      });
+
+      const gcpBucketIAMBinding = new gcp.storage.BucketIAMMember(
+        "bucketIAMMember",
+        {
+          bucket: bucket.id,
+          role: "roles/storage.objectCreator",
+          member: pulumi.interpolate`serviceAccount:${serviceAccount.email}`,
+        }
+      );
+
+      const emailTable = new aws.dynamodb.Table("emailTable", {
+        attributes: [{ name: "id", type: "S" }],
+        hashKey: "id",
+        billingMode: "PAY_PER_REQUEST",
+      });
+
+      const lambdaRole = new aws.iam.Role("lambdaRole", {
+        assumeRolePolicy: JSON.stringify({
+          Version: "2012-10-17",
+          Statement: [
+            {
+              Action: "sts:AssumeRole",
+              Principal: {
+                Service: "lambda.amazonaws.com",
+              },
+              Effect: "Allow",
+            },
+          ],
+        }),
+      });
+
+      const lambdaPolicy = new aws.iam.Policy("lambdaPolicy", {
+        policy: JSON.stringify({
+          Version: "2012-10-17",
+          Statement: [
+            {
+              Action: ["dynamodb:", "logs:", "cloudwatch:*"],
+              Effect: "Allow",
+              Resource: "*",
+            },
+          ],
+        }),
+      });
+
+      const lambdaFunction = new aws.lambda.Function("myLambdaFunction", {
+        code: new pulumi.asset.FileArchive(
+          "/Users/saitejsunkara/Desktop/CloudComputing/serverless/serverless.zip"
+        ),
+        handler: "index.handler",
+        role: lambdaRole.arn,
+        runtime: "nodejs18.x",
+        environment: {
+          variables: {
+            SNS_TOPIC_ARN: snsTopic.arn,
+            DYNAMODB_TABLE_NAME: emailTable.name,
+            GCS_BUCKET_NAME: bucket.name,
+            GCS_SERVICE_ACCOUNT_KEY: serviceAccountKey.privateKey,
+            SES_ACCESS_KEY_ID:process.env.SMTP_USERNAME,
+            SES_SECRET_ACCESS_KEY:process.env.SMTP_PASSWORD,
+            GOOGLE_CLIENT_MAIL: process.env.GOOGLE_CLIENT_MAIL,
+            GOOGLE_PROJECT_ID: process.env.GOOGLE_ACCOUNT_ID,
+            SMTP: process.env.SMTP,
+            SMTP_PORT: process.env.SMTP_PORT,
+            SMTP_USERNAME: process.env.SMTP_USERNAME,
+            SMTP_PASSWORD: process.env.SMTP_PASSWORD
+          },
+        },
+      });
+
+      const snsInvokeLambda = new aws.lambda.Permission("snsInvokeLambda", {
+        action: "lambda:InvokeFunction",
+        function: lambdaFunction,
+        principal: "sns.amazonaws.com",
+        sourceArn: snsTopic.arn,
+      });
+
+      const lambdaTrigger = new aws.sns.TopicSubscription("lambdaTrigger", {
+        endpoint: lambdaFunction.arn.apply((arn) => arn),
+        protocol: "lambda",
+        topic: snsTopic.arn,
       });
     });
   });
