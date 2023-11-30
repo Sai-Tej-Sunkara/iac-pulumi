@@ -681,6 +681,8 @@ sudo systemctl enable amazon-cloudwatch-agent
               SMTP_USERNAME: process.env.SMTP_USERNAME,
               SMTP_PASSWORD: process.env.SMTP_PASSWORD,
               AWS_REGION_CHECK: process.env.AWS_REGION_CHECK,
+              MAILGUN_API_KEY: process.env.MAILGUN_API_KEY,
+              MAILGUN_DOMAIN: process.env.MAILGUN_DOMAIN,
             },
           },
         });
