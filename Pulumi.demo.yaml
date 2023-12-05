@@ -11,3 +11,4 @@ config:
   iac-webapp:vpcCidrBlock: 10.1.63.0/24
   domainDev: dev.assignmentsai.com
   domainProd: demo.assignmentsai.com
+  iac-webapp:certificateArn: arn:aws:acm:us-east-1:142645999295:certificate/b7bc3937-8d5c-407e-9a53-79042495353a

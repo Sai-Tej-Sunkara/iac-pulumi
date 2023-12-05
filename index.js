@@ -408,8 +408,9 @@ sudo systemctl enable amazon-cloudwatch-agent
 
       const listener = new aws.lb.Listener("listener", {
         loadBalancerArn: appLoadBalancer.arn,
-        protocol: "HTTP",
-        port: 80,
+        protocol: "HTTPS",
+        certificateArn: config.require("certificateArn"),
+        port: 443,
         defaultActions: [
           {
             type: "forward",
