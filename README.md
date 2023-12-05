@@ -112,6 +112,14 @@ By setting up autorun, you ensure that your application is always running. The p
   
   In our Node.js deployment scenario, the `webapp.service` file serves as the unit file. It encapsulates instructions on how to run the application as a service.
 
+## 4. Command to Import Certificate and generate ARN
+
+- **Command:** aws acm import-certificate \
+--certificate fileb:///Users/saitejsunkara/Downloads/certificatesme/certificate.crt \
+--private-key fileb:///Users/saitejsunkara/Downloads/certificatesme/private.key \
+--certificate-chain fileb:///Users/saitejsunkara/Downloads/certificatesme/ca_bundle.crt \
+--profile demo
+
 ---
 
 **Note**: Before executing the provided code, ensure all necessary environment variables and configurations are correctly set up. The EC2 instance should have Node.js installed, and it should be compatible with the provided systemd configuration.
